@@ -8,6 +8,7 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .classifier import InvalidRequest, InvalidSchema
+from .consent import InvalidAccess, InvalidConsent
 from .deidentifier import InvalidPolicy
 from .risk import InvalidK, InvalidQuasiIdentifiers
 from .service import Service
@@ -15,7 +16,8 @@ from .service import Service
 CLASSIFY_PATH = "/v1/classify"
 DEIDENTIFY_PATH = "/v1/deidentify"
 RISK_PATH = "/v1/reidentification-risk"
-KNOWN_POST_PATHS = (CLASSIFY_PATH, DEIDENTIFY_PATH, RISK_PATH)
+CONSENT_PATH = "/v1/consent/evaluate"
+KNOWN_POST_PATHS = (CLASSIFY_PATH, DEIDENTIFY_PATH, RISK_PATH, CONSENT_PATH)
 
 
 def env_address() -> tuple[str, int]:
@@ -76,6 +78,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == RISK_PATH:
             self.handle_json_endpoint(self.service.reidentification_risk, wrap_results=False)
             return
+        if self.path == CONSENT_PATH:
+            self.handle_json_endpoint(self.service.evaluate_consent)
+            return
         self.not_found()
 
     def do_PUT(self) -> None:
@@ -119,6 +124,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         except InvalidK as exc:
             self.send_error_json(422, "invalid_k", str(exc))
+            return
+        except InvalidConsent as exc:
+            self.send_error_json(422, "invalid_consent", str(exc))
+            return
+        except InvalidAccess as exc:
+            self.send_error_json(422, "invalid_access", str(exc))
             return
         self.send_json(200, {"results": output} if wrap_results else output)
 
