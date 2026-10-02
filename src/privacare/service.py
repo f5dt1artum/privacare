@@ -10,6 +10,7 @@ from typing import Any
 
 from . import __version__
 from .classifier import classify_request
+from .consent import evaluate_consent_request
 from .deidentifier import deidentify_request
 from .risk import reidentification_risk_request
 
@@ -34,3 +35,7 @@ class Service:
     def reidentification_risk(self, payload: Any) -> dict:
         """Measure k-anonymity re-identification risk in a request payload."""
         return reidentification_risk_request(payload)
+
+    def evaluate_consent(self, payload: Any) -> list[dict]:
+        """Evaluate accesses against consents in a /v1/consent/evaluate payload."""
+        return evaluate_consent_request(payload)

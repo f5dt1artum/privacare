@@ -49,10 +49,21 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；`quasi_identifiers` 不是合规数组、含重复项或非法 JSON Pointer，或任一指针未解析为标量时返回 422 `invalid_quasi_identifiers`；`k` 为布尔值、非整数或小于 2 时返回 422 `invalid_k`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
 
+### `POST /v1/consent/evaluate`
+
+请求级同意与用途约束判定。请求体为 JSON 对象：
+
+- `consents`：非空数组，每项为一个同意对象，字段包括 `consent_id`（请求内唯一）、`subject_id`、非空且不重复的 `purposes`、`data_categories`（仅限五种敏感类别）与 `recipients`、带时区的 RFC 3339 时间 `valid_from` 与 `valid_until`（结束必须晚于开始），以及 `active` 或 `revoked` 的 `status`。
+- `accesses`：非空数组，每项为一个使用请求，字段包括 `subject_id`、`purpose`、`data_category`（仅限五种敏感类别）、`recipient` 与带时区的 RFC 3339 时间 `requested_at`。
+
+使用项仅当主体、用途、类别与接收方被同一条 `active` 同意覆盖，且 `requested_at` 不早于 `valid_from` 并早于 `valid_until` 时允许；`revoked` 同意不授权。多条同意匹配时选择 `valid_from` 最晚者，相同再取 `consent_id` 字典序最小者。响应为 `{"results": [...]}`，按 `accesses` 顺序给出每项的 `index`、`allowed` 与 `reason`：允许时 `reason` 为 `consent_granted` 并附 `consent_id`，拒绝时为 `no_matching_consent` 且不带 `consent_id`。响应不回显输入；评估仅作用于当前请求，不保存数据、不修改输入，相同输入产生相同结果。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构非法或 `consents`、`accesses` 缺失、不是数组或为空时返回 422 `invalid_request`；同意缺字段、`consent_id` 重复、范围集合为空或含重复项、状态或类别非法、时间非法或结束时间不晚于开始时间时返回 422 `invalid_consent`；使用项缺字段、类别或时间非法时返回 422 `invalid_access`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
 ## 验证
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-当前基线刻意不包含同意管理与审计证据链的实现，以便后续任务从已冻结事实出发独立设计并验证这些能力。
+当前基线刻意不包含审计证据链的实现，以便后续任务从已冻结事实出发独立设计并验证该能力。
