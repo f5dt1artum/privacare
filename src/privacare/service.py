@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import __version__
+from .audit import audit_chain_request, audit_verify_request
 from .classifier import classify_request
 from .consent import consent_evaluate_request
 from .deidentifier import deidentify_request
@@ -16,7 +17,7 @@ from .risk import reidentification_risk_request
 
 
 class Service:
-    """Health reporting, classification, de-identification, risk, consent."""
+    """Health, classification, de-identification, risk, consent, audit."""
 
     name = "privacare"
     version = __version__
@@ -39,3 +40,11 @@ class Service:
     def evaluate_consent(self, payload: Any) -> list[dict]:
         """Evaluate accesses against consents in a /v1/consent/evaluate payload."""
         return consent_evaluate_request(payload)
+
+    def audit_chain(self, payload: Any) -> dict:
+        """Build an evidence chain for a /v1/audit/chain payload."""
+        return audit_chain_request(payload)
+
+    def audit_verify(self, payload: Any) -> dict:
+        """Verify an evidence chain in a /v1/audit/verify payload."""
+        return audit_verify_request(payload)
