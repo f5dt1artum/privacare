@@ -60,10 +60,30 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构非法或数组缺失、为空时返回 422 `invalid_request`；同意缺字段、`consent_id` 重复、范围集合为空或重复、状态或类别非法、时间非法，或结束时间不晚于开始时间时返回 422 `invalid_consent`；使用项缺字段、类别或时间非法时返回 422 `invalid_access`。任何校验失败都不返回部分结果。
 
+### `POST /v1/audit/chain`
+
+防篡改审计证据链建链，无状态；调用方可将上一批响应的 `final_hash` 作为下一批请求的 `anchor_hash` 衔接。请求体为 JSON 对象：
+
+- `events`：非空数组，每项为一个事件对象，字段为 `event_id`（请求内唯一的非空字符串）、`occurred_at`（带时区的 RFC 3339 时间）、`actor_id`、`action`、`resource`、`purpose`（均为非空字符串）与 `outcome`（`allowed` 或 `denied`）；`details` 可省略，存在时须为 JSON 对象。其他扩展字段一并计入证据。
+- `anchor_hash`（可选）：64 位十六进制字符串，省略时采用全零值。
+
+事件按输入顺序处理，每步将前一哈希解码后的字节与事件按 RFC 8785 规范化所得 UTF-8 字节连接并计算 SHA-256。响应为 `{"anchor_hash": ..., "final_hash": ..., "evidence": [...]}`，其中 `anchor_hash` 为小写；`evidence` 每项仅含 `index`、`event_id`、`previous_hash` 与 `evidence_hash`。相同输入结果相同，不修改调用方数据，响应不回显事件值。
+
+### `POST /v1/audit/verify`
+
+验真建链接口所得证据链。请求体为 JSON 对象：
+
+- `events`、`anchor_hash`：与 `POST /v1/audit/chain` 同义。
+- `evidence`：与 `events` 等长的数组，每项含 `index`、`event_id`、`previous_hash` 与 `evidence_hash`。
+
+依次复算并核对下标、事件标识、前序哈希与证据哈希。全部一致返回 `{"valid": true, "first_invalid_index": null}`；首次不一致返回 `{"valid": false, "first_invalid_index": <输入下标>}`。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根对象非法或 `events` 缺失、为空返回 422 `invalid_request`；事件缺字段、类型或时间非法、`event_id` 重复返回 422 `invalid_audit_event`；锚点非法返回 422 `invalid_anchor`；`evidence` 非等长数组、条目缺字段或哈希格式非法返回 422 `invalid_evidence_chain`。任何校验失败都不返回部分证据，错误响应不含事件值。
+
 ## 验证
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-当前基线刻意不包含审计证据链的实现，以便后续任务从已冻结事实出发独立设计并验证这些能力。
+当前基线已包含审计证据链的建链与验真能力；后续题目应从已冻结事实出发独立设计并验证其余能力。
