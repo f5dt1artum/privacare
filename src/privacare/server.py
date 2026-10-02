@@ -8,9 +8,11 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .classifier import InvalidRequest, InvalidSchema
+from .deidentifier import InvalidPolicy
 from .service import Service
 
 CLASSIFY_PATH = "/v1/classify"
+DEIDENTIFY_PATH = "/v1/deidentify"
 
 
 def env_address() -> tuple[str, int]:
@@ -49,8 +51,8 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def route_known_path(self) -> None:
-        """405 for the classify endpoint, 404 for anything else."""
-        if self.path == CLASSIFY_PATH:
+        """405 for the API endpoints, 404 for anything else."""
+        if self.path in (CLASSIFY_PATH, DEIDENTIFY_PATH):
             self.method_not_allowed()
             return
         self.not_found()
@@ -65,6 +67,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == CLASSIFY_PATH:
             self.handle_classify()
             return
+        if self.path == DEIDENTIFY_PATH:
+            self.handle_deidentify()
+            return
         self.not_found()
 
     def do_PUT(self) -> None:
@@ -76,20 +81,26 @@ class Handler(BaseHTTPRequestHandler):
     def do_PATCH(self) -> None:
         self.route_known_path()
 
-    def handle_classify(self) -> None:
+    def read_json_payload(self):
+        """Read and decode the request body, or send an error and return None."""
         content_type = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
         if content_type != "application/json":
             self.send_error_json(415, "unsupported_media_type", "Content-Type must be application/json")
-            return
+            return None
         try:
             length = int(self.headers.get("Content-Length") or "0")
         except ValueError:
             length = 0
         raw = self.rfile.read(length) if length > 0 else b""
         try:
-            payload = json.loads(raw)
+            return json.loads(raw)
         except ValueError:
             self.send_error_json(400, "invalid_json", "request body is not valid JSON")
+            return None
+
+    def handle_classify(self) -> None:
+        payload = self.read_json_payload()
+        if payload is None:
             return
         try:
             results = self.service.classify(payload)
@@ -98,6 +109,23 @@ class Handler(BaseHTTPRequestHandler):
             return
         except InvalidSchema as exc:
             self.send_error_json(422, "invalid_schema", str(exc))
+            return
+        self.send_json(200, {"results": results})
+
+    def handle_deidentify(self) -> None:
+        payload = self.read_json_payload()
+        if payload is None:
+            return
+        try:
+            results = self.service.deidentify(payload)
+        except InvalidRequest as exc:
+            self.send_error_json(422, "invalid_request", str(exc))
+            return
+        except InvalidSchema as exc:
+            self.send_error_json(422, "invalid_schema", str(exc))
+            return
+        except InvalidPolicy as exc:
+            self.send_error_json(422, "invalid_policy", str(exc))
             return
         self.send_json(200, {"results": results})
 
