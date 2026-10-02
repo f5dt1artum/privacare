@@ -12,6 +12,19 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 服务默认监听 `127.0.0.1:8080`，可通过 `PRIVACARE_ADDR` 修改。`GET /healthz` 返回 JSON 健康状态。
 
+## 接口
+
+### `POST /v1/classify`
+
+批量医疗记录敏感字段识别。请求体为 JSON 对象：
+
+- `records`：非空数组，每项为一个医疗记录对象（可含嵌套对象与数组）。
+- `schema`（可选）：对象，键为 JSON Pointer，值为类别或类别数组，仅对当前请求生效。
+
+响应为 `{"results": [...]}`，按输入顺序给出每条记录的 `index` 与 `fields`。每个命中项只含 `path`（转义正确的 JSON Pointer，数组元素带下标）、`categories`（`direct_identifier`、`contact`、`clinical`、`financial`、`quasi_identifier`，固定顺序去重）与 `sources`（`schema` / `field_name` / `value`），不回显原始值；未命中的记录返回空 `fields`。
+
+错误语义：非 `application/json` 返回 415 `unsupported_media_type`；JSON 解析失败返回 400 `invalid_json`；请求结构非法返回 422 `invalid_request`；schema 非法返回 422 `invalid_schema`；其他方法返回 405 `method_not_allowed`。任何校验失败都不返回部分分析结果。
+
 ## 验证
 
 ```bash

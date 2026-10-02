@@ -7,14 +7,21 @@ surface here backward compatible.
 
 from __future__ import annotations
 
+from typing import Any
+
 from . import __version__
+from .classifier import classify_request
 
 
 class Service:
-    """Placeholder service. Only health reporting is implemented."""
+    """Health reporting plus medical-record field classification."""
 
     name = "privacare"
     version = __version__
 
     def health(self) -> dict[str, str]:
         return {"status": "ok", "service": self.name, "version": self.version}
+
+    def classify(self, payload: Any) -> list[dict]:
+        """Classify sensitive fields in a /v1/classify request payload."""
+        return classify_request(payload)
