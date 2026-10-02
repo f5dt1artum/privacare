@@ -11,10 +11,12 @@ from typing import Any
 from . import __version__
 from .classifier import classify_request
 from .deidentifier import deidentify_request
+from .reidentification import reidentification_risk_request
 
 
 class Service:
-    """Health reporting, field classification, and de-identification."""
+    """Health reporting, field classification, de-identification, and
+    re-identification risk evaluation."""
 
     name = "privacare"
     version = __version__
@@ -29,3 +31,7 @@ class Service:
     def deidentify(self, payload: Any) -> list[dict]:
         """De-identify records in a /v1/deidentify request payload."""
         return deidentify_request(payload)
+
+    def reidentification_risk(self, payload: Any) -> dict:
+        """Evaluate k-anonymity for a /v1/reidentification-risk payload."""
+        return reidentification_risk_request(payload)
