@@ -427,49 +427,58 @@ def _parse_schema_categories(raw: Any) -> tuple[str, ...]:
     return tuple(cats)
 
 
+def _record_hits(
+    record: dict, rules: list[tuple[tuple[str, ...], tuple[str, ...]]]
+) -> dict[tuple[str, ...], tuple[set[str], set[str]]]:
+    """Merge schema/field-name/value hits for one record.
+
+    Returns a mapping of leaf path segments to (categories, sources).
+    """
+    hits: dict[tuple[str, ...], tuple[set[str], set[str]]] = {}
+
+    def hit(segments: tuple[str, ...], cats: set[str] | tuple[str, ...], source: str) -> None:
+        entry = hits.get(segments)
+        if entry is None:
+            entry = hits[segments] = (set(), set())
+        entry[0].update(cats)
+        entry[1].add(source)
+
+    for segments, cats in rules:
+        node = _resolve(record, segments)
+        if node is _MISSING:
+            continue
+        for leaf_segments, _key, _value in _iter_leaves(node, segments, ""):
+            hit(leaf_segments, cats, "schema")
+
+    for leaf_segments, key, value in _iter_leaves(record, (), ""):
+        name_cats = _name_categories(key)
+        if name_cats:
+            hit(leaf_segments, name_cats, "field_name")
+        if isinstance(value, str):
+            value_cats = _value_categories(value)
+            if value_cats:
+                hit(leaf_segments, value_cats, "value")
+    return hits
+
+
 def _classify_records(records: list[dict], rules: list[tuple[tuple[str, ...], tuple[str, ...]]]) -> list[dict]:
     results = []
     for index, record in enumerate(records):
-        hits: dict[str, tuple[set[str], set[str]]] = {}
-
-        def hit(path: str, cats: set[str] | tuple[str, ...], source: str) -> None:
-            entry = hits.get(path)
-            if entry is None:
-                entry = hits[path] = (set(), set())
-            entry[0].update(cats)
-            entry[1].add(source)
-
-        for segments, cats in rules:
-            node = _resolve(record, segments)
-            if node is _MISSING:
-                continue
-            for leaf_segments, _key, _value in _iter_leaves(node, segments, ""):
-                hit(_pointer(leaf_segments), cats, "schema")
-
-        for leaf_segments, key, value in _iter_leaves(record, (), ""):
-            path = _pointer(leaf_segments)
-            name_cats = _name_categories(key)
-            if name_cats:
-                hit(path, name_cats, "field_name")
-            if isinstance(value, str):
-                value_cats = _value_categories(value)
-                if value_cats:
-                    hit(path, value_cats, "value")
-
+        hits = _record_hits(record, rules)
         fields = [
             {
-                "path": path,
+                "path": _pointer(segments),
                 "categories": [c for c in CATEGORIES if c in cats],
                 "sources": [s for s in SOURCES if s in sources],
             }
-            for path, (cats, sources) in sorted(hits.items())
+            for segments, (cats, sources) in sorted(hits.items(), key=lambda item: _pointer(item[0]))
         ]
         results.append({"index": index, "fields": fields})
     return results
 
 
-def classify_request(payload: Any) -> list[dict]:
-    """Validate a /v1/classify payload and classify every record."""
+def _validate_records(payload: Any) -> list[dict]:
+    """Shared structural validation for record-batch request payloads."""
     if not isinstance(payload, dict):
         raise InvalidRequest("request body must be a JSON object")
     records = payload.get("records")
@@ -478,14 +487,23 @@ def classify_request(payload: Any) -> list[dict]:
     for record in records:
         if not isinstance(record, dict):
             raise InvalidRequest("each record must be an object")
-    schema = payload.get("schema")
+    return records
+
+
+def _parse_rules(schema: Any) -> list[tuple[tuple[str, ...], tuple[str, ...]]]:
+    """Validate an optional request schema into (segments, categories) rules."""
     if schema is None:
-        rules: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
-    else:
-        if not isinstance(schema, dict):
-            raise InvalidSchema("schema must be an object")
-        rules = [
-            (_parse_pointer(pointer), _parse_schema_categories(cats))
-            for pointer, cats in schema.items()
-        ]
+        return []
+    if not isinstance(schema, dict):
+        raise InvalidSchema("schema must be an object")
+    return [
+        (_parse_pointer(pointer), _parse_schema_categories(cats))
+        for pointer, cats in schema.items()
+    ]
+
+
+def classify_request(payload: Any) -> list[dict]:
+    """Validate a /v1/classify payload and classify every record."""
+    records = _validate_records(payload)
+    rules = _parse_rules(payload.get("schema"))
     return _classify_records(records, rules)

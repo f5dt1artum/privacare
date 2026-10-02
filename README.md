@@ -25,10 +25,22 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：非 `application/json` 返回 415 `unsupported_media_type`；JSON 解析失败返回 400 `invalid_json`；请求结构非法返回 422 `invalid_request`；schema 非法返回 422 `invalid_schema`；其他方法返回 405 `method_not_allowed`。任何校验失败都不返回部分分析结果。
 
+### `POST /v1/deidentify`
+
+批量医疗记录去标识化。请求体为 JSON 对象：
+
+- `records`：非空数组，每项为一个医疗记录对象（可含嵌套对象与数组）。
+- `schema`（可选）：与 `POST /v1/classify` 同义，仅对当前请求生效。
+- `policy`（必需）：非空对象，键仅为五种敏感类别，值仅为 `keep`、`redact` 或 `drop`。未配置的类别按 `keep` 处理；同一叶子命中多个类别时按 `drop` > `redact` > `keep` 的优先级选择唯一动作。
+
+处理时先按现有分类规则与本次 schema 找出叶子，再逐条复制后变换：`redact` 将叶子值替换为 `null`；`drop` 删除对象成员、对数组元素替换为 `null`（删除后保留可能变空的父容器）；`keep` 不修改。响应为 `{"results": [...]}`，按输入顺序给出每条记录的 `index`、变换后的 `record` 与 `transformations`；清单按 `path` 字典序排列，每项只含 `path`、最终 `action` 与按固定顺序去重的 `categories`，不回显原始值。进程内调用不会修改调用方传入的数据，重复处理相同输入结果一致。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；缺少 `policy` 返回 422 `invalid_request`；`policy` 不是对象、为空、含未知类别或动作非法返回 422 `invalid_policy`。任何校验失败都不返回部分结果。
+
 ## 验证
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-当前基线刻意不包含去标识化、同意管理与审计证据链的实现，以便后续任务从已冻结事实出发独立设计并验证这些能力。
+当前基线刻意不包含同意管理与审计证据链的实现，以便后续任务从已冻结事实出发独立设计并验证这些能力。

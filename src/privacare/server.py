@@ -8,9 +8,12 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .classifier import InvalidRequest, InvalidSchema
+from .deidentifier import InvalidPolicy
 from .service import Service
 
 CLASSIFY_PATH = "/v1/classify"
+DEIDENTIFY_PATH = "/v1/deidentify"
+KNOWN_POST_PATHS = (CLASSIFY_PATH, DEIDENTIFY_PATH)
 
 
 def env_address() -> tuple[str, int]:
@@ -49,8 +52,8 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def route_known_path(self) -> None:
-        """405 for the classify endpoint, 404 for anything else."""
-        if self.path == CLASSIFY_PATH:
+        """405 for the known POST endpoints, 404 for anything else."""
+        if self.path in KNOWN_POST_PATHS:
             self.method_not_allowed()
             return
         self.not_found()
@@ -63,7 +66,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         if self.path == CLASSIFY_PATH:
-            self.handle_classify()
+            self.handle_json_endpoint(self.service.classify)
+            return
+        if self.path == DEIDENTIFY_PATH:
+            self.handle_json_endpoint(self.service.deidentify)
             return
         self.not_found()
 
@@ -76,7 +82,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_PATCH(self) -> None:
         self.route_known_path()
 
-    def handle_classify(self) -> None:
+    def handle_json_endpoint(self, handler) -> None:
+        """Shared JSON-body handling for the POST endpoints."""
         content_type = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
         if content_type != "application/json":
             self.send_error_json(415, "unsupported_media_type", "Content-Type must be application/json")
@@ -92,12 +99,15 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error_json(400, "invalid_json", "request body is not valid JSON")
             return
         try:
-            results = self.service.classify(payload)
+            results = handler(payload)
         except InvalidRequest as exc:
             self.send_error_json(422, "invalid_request", str(exc))
             return
         except InvalidSchema as exc:
             self.send_error_json(422, "invalid_schema", str(exc))
+            return
+        except InvalidPolicy as exc:
+            self.send_error_json(422, "invalid_policy", str(exc))
             return
         self.send_json(200, {"results": results})
 
