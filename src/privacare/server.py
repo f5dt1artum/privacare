@@ -9,11 +9,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .classifier import InvalidRequest, InvalidSchema
 from .deidentifier import InvalidPolicy
+from .risk import InvalidK, InvalidQuasiIdentifiers
 from .service import Service
 
 CLASSIFY_PATH = "/v1/classify"
 DEIDENTIFY_PATH = "/v1/deidentify"
-KNOWN_POST_PATHS = (CLASSIFY_PATH, DEIDENTIFY_PATH)
+RISK_PATH = "/v1/reidentification-risk"
+KNOWN_POST_PATHS = (CLASSIFY_PATH, DEIDENTIFY_PATH, RISK_PATH)
 
 
 def env_address() -> tuple[str, int]:
@@ -71,6 +73,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == DEIDENTIFY_PATH:
             self.handle_json_endpoint(self.service.deidentify)
             return
+        if self.path == RISK_PATH:
+            self.handle_json_endpoint(self.service.reidentification_risk, wrap_results=False)
+            return
         self.not_found()
 
     def do_PUT(self) -> None:
@@ -82,7 +87,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_PATCH(self) -> None:
         self.route_known_path()
 
-    def handle_json_endpoint(self, handler) -> None:
+    def handle_json_endpoint(self, handler, wrap_results: bool = True) -> None:
         """Shared JSON-body handling for the POST endpoints."""
         content_type = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
         if content_type != "application/json":
@@ -99,7 +104,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error_json(400, "invalid_json", "request body is not valid JSON")
             return
         try:
-            results = handler(payload)
+            output = handler(payload)
         except InvalidRequest as exc:
             self.send_error_json(422, "invalid_request", str(exc))
             return
@@ -109,7 +114,13 @@ class Handler(BaseHTTPRequestHandler):
         except InvalidPolicy as exc:
             self.send_error_json(422, "invalid_policy", str(exc))
             return
-        self.send_json(200, {"results": results})
+        except InvalidQuasiIdentifiers as exc:
+            self.send_error_json(422, "invalid_quasi_identifiers", str(exc))
+            return
+        except InvalidK as exc:
+            self.send_error_json(422, "invalid_k", str(exc))
+            return
+        self.send_json(200, {"results": output} if wrap_results else output)
 
     def log_message(self, fmt: str, *args: object) -> None:
         """Silence per-request logging so recorded output stays stable."""

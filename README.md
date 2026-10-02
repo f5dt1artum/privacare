@@ -37,6 +37,18 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；缺少 `policy` 返回 422 `invalid_request`；`policy` 不是对象、为空、含未知类别或动作非法返回 422 `invalid_policy`。任何校验失败都不返回部分结果。
 
+### `POST /v1/reidentification-risk`
+
+基于 k 匿名的重标识风险度量。请求体为 JSON 对象：
+
+- `records`：与其他接口一致的非空医疗记录对象数组。
+- `quasi_identifiers`：非空、不重复的 JSON Pointer 字符串数组，按顺序指定准标识字段。每个指针在每条记录上都必须解析到 JSON 标量（`null` 可参与分组）；缺失、越界或落到对象/数组时整个请求失败。
+- `k`：不小于 2 的 JSON 整数（布尔值不接受）。
+
+等价组由各准标识值的有序组合确定，字符串区分大小写，布尔值不与数字相等（`true ≠ 1`），JSON 数字按数值相等（`1 = 1.0`）。响应为 `{"summary": ..., "results": [...]}`：`summary` 给出 `k`、`record_count`、`equivalence_class_count`、`minimum_class_size`、`at_risk_records` 与 `at_risk_rate`；组大小小于 `k` 的记录计入风险。`results` 按输入顺序给出每条记录的 `index`、`class_size`、`risk_score`（即 `1/class_size`）与 `at_risk`。比例与分数均按十进制 5 入保留六位小数。响应不回显准标识值、分组键或原始记录；评估仅作用于当前请求，不保存数据、不修改输入，相同输入产生相同结果，仅改变输入顺序不改变各记录的组大小与风险结论。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；`quasi_identifiers` 不是合规数组、含重复项或非法 JSON Pointer，或任一指针未解析为标量时返回 422 `invalid_quasi_identifiers`；`k` 为布尔值、非整数或小于 2 时返回 422 `invalid_k`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
 ## 验证
 
 ```bash
