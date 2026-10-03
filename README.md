@@ -117,10 +117,43 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构非法或 `datasets`、`queries` 缺失、为空、非数组，或 `transfers` 非数组时返回 422 `invalid_request`；数据集缺字段、`dataset_id` 为空或重复、类别集合为空、重复或非法返回 422 `invalid_dataset`；流转缺字段、字段为空、`transfer_id` 重复、端点相同或引用不存在、时间非法或类别集合非法（含类别不是两端数据集类别的子集）返回 422 `invalid_transfer`；查询缺字段、引用未知数据集、`direction` 非法、`max_depth` 越界或为布尔/非整数、`as_of` 非法，或类别集合为空、重复、非法、不是起点类别的子集时返回 422 `invalid_query`。任何校验失败都不返回部分结果或完整输入；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
 
+### `POST /v1/encryption/encrypt`
+
+请求级、无状态的字段级认证加密。请求体为 JSON 对象：
+
+- `records`：与其他接口一致的非空医疗记录对象数组。
+- `fields`：非空、不重复的非根 JSON Pointer（RFC 6901）字符串数组；每个指针在每条记录上都必须可解析，且任意两个路径不得互为祖先或后代。
+- `key_id`：非空密钥版本标识字符串。
+- `secret`：无填充 base64url 字符串，解码后恰为 32 字节。
+- `context`（可选）：非空字符串，省略或为 `null` 时采用固定默认值 `privacare.encryption.v1`。
+
+每个目标值先按 RFC 8785 规范化，再以 A256GCM（AES-256-GCM）加密为仅含 `alg`、`key_id`、`context`、`nonce`、`ciphertext` 的信封对象；`nonce` 为每次随机生成的 12 字节，认证数据绑定 `key_id`、`context` 与规范化路径，因此信封被移动到其他路径或篡改后无法通过认证。响应为 `{"results": [...]}`，按输入顺序给出每条记录的 `index`、变换后的 `record` 与 `transformations`；清单按 `path` 字典序排列，每项只含 `path` 与 `key_id`。非目标内容保持不变；响应及错误均不回显原值或 `secret`；进程内调用不修改输入，请求之间不保存记录、密钥或映射。
+
+### `POST /v1/encryption/decrypt`
+
+字段级解密，恢复加密接口产生的信封。请求体为 JSON 对象：
+
+- `records`、`fields`：与 `POST /v1/encryption/encrypt` 同义，每个指针在每条记录上都必须解析到合法信封。
+- `keys`：非空对象，将密钥版本标识映射到 `secret`（无填充 base64url，解码后恰为 32 字节）。
+
+每个信封按其 `key_id` 在 `keys` 中查找密钥并认证解密，恢复出的原值写回复制后的记录。响应形状与加密接口一致，`transformations` 每项只含 `path` 与 `key_id`（即各信封实际使用的密钥版本）。信封引用 `keys` 中不存在的密钥版本返回 422 `invalid_key`。
+
+### `POST /v1/encryption/rotate`
+
+请求级密钥轮换：以旧密钥打开信封，再以新密钥重新加密，保留各信封的 `context`。请求体为 JSON 对象：
+
+- `records`、`fields`、`keys`：与 `POST /v1/encryption/decrypt` 同义，`keys` 提供旧密钥。
+- `new_key_id`：非空的新密钥版本标识字符串。
+- `new_secret`：无填充 base64url 字符串，解码后恰为 32 字节。
+
+轮换后的信封仅含 `alg`、`key_id`（即 `new_key_id`）、`context`（保留原值）、新生成的随机 `nonce` 与 `ciphertext`。响应形状与加密接口一致，`transformations` 每项只含 `path`、`old_key_id` 与 `new_key_id`。轮换绝不产生部分更新的结果。
+
+错误语义（三个接口一致）：HTTP 层与 `POST /v1/classify` 一致；根对象或 `records` 非法返回 422 `invalid_request`；`fields` 类型、重复、语法、路径重叠、路径缺失或解析非法返回 422 `invalid_fields`；密钥标识、`secret`、`keys`、信封引用缺失密钥或新密钥非法返回 422 `invalid_key`；`context` 非法返回 422 `invalid_context`；信封结构或编码非法返回 422 `invalid_envelope`；认证失败、信封被移动或篡改返回 422 `invalid_ciphertext`。任何校验失败都不返回部分结果；这些路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
 ## 验证
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-当前基线已包含审计证据链的建链与验真，以及请求级数据血缘追踪能力；后续题目应从已冻结事实出发独立设计并验证其余能力。
+当前基线已包含审计证据链的建链与验真、请求级数据血缘追踪，以及字段级认证加密、解密与密钥轮换能力；后续题目应从已冻结事实出发独立设计并验证其余能力。

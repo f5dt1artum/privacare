@@ -13,6 +13,7 @@ from .audit import InvalidAnchor, InvalidAuditEvent, InvalidEvidenceChain
 from .classifier import InvalidRequest, InvalidSchema
 from .consent import InvalidAccess, InvalidConsent
 from .deidentifier import InvalidPolicy
+from .encryption import InvalidCiphertext, InvalidEnvelope
 from .lineage import InvalidDataset, InvalidQuery, InvalidTransfer
 from .pseudonymizer import InvalidContext, InvalidFields, InvalidKey
 from .risk import InvalidK, InvalidQuasiIdentifiers
@@ -27,6 +28,9 @@ ACCESS_PATH = "/v1/access/evaluate"
 AUDIT_CHAIN_PATH = "/v1/audit/chain"
 AUDIT_VERIFY_PATH = "/v1/audit/verify"
 LINEAGE_TRACE_PATH = "/v1/lineage/trace"
+ENCRYPT_PATH = "/v1/encryption/encrypt"
+DECRYPT_PATH = "/v1/encryption/decrypt"
+ROTATE_PATH = "/v1/encryption/rotate"
 KNOWN_POST_PATHS = (
     CLASSIFY_PATH,
     DEIDENTIFY_PATH,
@@ -37,6 +41,9 @@ KNOWN_POST_PATHS = (
     AUDIT_CHAIN_PATH,
     AUDIT_VERIFY_PATH,
     LINEAGE_TRACE_PATH,
+    ENCRYPT_PATH,
+    DECRYPT_PATH,
+    ROTATE_PATH,
 )
 
 
@@ -115,6 +122,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == LINEAGE_TRACE_PATH:
             self.handle_json_endpoint(self.service.trace_lineage, wrap_results=False)
+            return
+        if self.path == ENCRYPT_PATH:
+            self.handle_json_endpoint(self.service.encrypt)
+            return
+        if self.path == DECRYPT_PATH:
+            self.handle_json_endpoint(self.service.decrypt)
+            return
+        if self.path == ROTATE_PATH:
+            self.handle_json_endpoint(self.service.rotate)
             return
         self.not_found()
 
@@ -198,6 +214,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         except InvalidQuery as exc:
             self.send_error_json(422, "invalid_query", str(exc))
+            return
+        except InvalidEnvelope as exc:
+            self.send_error_json(422, "invalid_envelope", str(exc))
+            return
+        except InvalidCiphertext as exc:
+            self.send_error_json(422, "invalid_ciphertext", str(exc))
             return
         self.send_json(200, {"results": output} if wrap_results else output)
 
