@@ -14,7 +14,7 @@ from .aggregate import aggregate_query_request
 from .audit import audit_chain_request, audit_verify_request
 from .classifier import classify_request
 from .compliance import transfer_evaluate_request
-from .consent import consent_evaluate_request
+from .consent import consent_evaluate_request, consent_timeline_request
 from .deidentifier import deidentify_request
 from .differential import differential_aggregate_request
 from .encryption import decrypt_request, encrypt_request, rotate_request
@@ -51,6 +51,10 @@ class Service:
     def evaluate_consent(self, payload: Any) -> list[dict]:
         """Evaluate accesses against consents in a /v1/consent/evaluate payload."""
         return consent_evaluate_request(payload)
+
+    def consent_timeline(self, payload: Any) -> list[dict]:
+        """Rebuild consent lifecycle states for a /v1/consent/timeline payload."""
+        return consent_timeline_request(payload)
 
     def evaluate_access(self, payload: Any) -> list[dict]:
         """Evaluate accesses against grants in a /v1/access/evaluate payload."""
