@@ -150,10 +150,23 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；根对象或 `records` 非法返回 422 `invalid_request`；`fields` 类型、重复、语法、重叠、路径缺失或解析非法返回 422 `invalid_fields`；`key_id`、`secret`、`keys`、缺少信封引用密钥或新密钥非法返回 422 `invalid_key`；`context` 非法返回 422 `invalid_context`；信封结构或编码非法返回 422 `invalid_envelope`；认证错误、信封被移动或篡改返回 422 `invalid_ciphertext`。任何校验失败都不返回部分结果；响应与错误均不回显密钥或受保护原值；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
 
+### `POST /v1/query/aggregate`
+
+带小群体保护的请求级分组聚合，无状态、不修改输入。请求体为 JSON 对象：
+
+- `records`：与其他接口一致的非空医疗记录对象数组。
+- `group_by`：不重复的 JSON Pointer（RFC 6901）字符串数组，可为空数组表示全局分组。每个非空指针在每条记录上都必须解析为字符串、有限 JSON 数字、布尔值或 `null`，不得指向对象或数组。
+- `metrics`：非空数组，每项含请求内唯一的非空 `name` 与 `operation`（`count`、`sum` 或 `average`）。`count` 不携带 `field`，统计组内记录数；`sum` 与 `average` 须携带非根 JSON Pointer `field`，且该字段在全部记录中均为有限 JSON 数字（布尔值不算数字）。
+- `minimum_group_size`：2 至 1000 的 JSON 整数（布尔值不接受）。
+
+分组键按 `group_by` 顺序组成：不同 JSON 类型不相等（`true ≠ 1`、`null ≠ false`），数字按数值相等（`1 = 1.0`），字符串区分大小写。响应为 `{"groups": [...], "suppressed_group_count": N}`：`groups` 按首次出现顺序给出达到阈值的组，每组仅含 `key`（与 `group_by` 等长同序，全局分组为空数组）、`size` 与以指标名称为键的 `metrics`；`sum` 与 `average` 按十进制四舍五入保留六位小数。小于阈值的组不计算也不返回任何指标，只计入 `suppressed_group_count`，其键、大小、记录下标与原始值均不泄露。相同输入产生相同结果。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根对象或 `records` 非法返回 422 `invalid_request`；`group_by` 的类型、重复、语法、解析或值类型非法返回 422 `invalid_group_by`；指标名称、操作、字段组合、指针或数值非法返回 422 `invalid_metric`；阈值非法返回 422 `invalid_threshold`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
 ## 验证
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-当前基线已包含审计证据链的建链与验真、请求级数据血缘追踪，以及字段级认证加密的加密、解密与轮换能力；后续题目应从已冻结事实出发独立设计并验证其余能力。
+当前基线已包含审计证据链的建链与验真、请求级数据血缘追踪、字段级认证加密的加密、解密与轮换，以及带小群体保护的分组聚合查询能力；后续题目应从已冻结事实出发独立设计并验证其余能力。
