@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import __version__
+from .access import access_evaluate_request
 from .audit import audit_chain_request, audit_verify_request
 from .classifier import classify_request
 from .consent import consent_evaluate_request
@@ -45,6 +46,10 @@ class Service:
     def evaluate_consent(self, payload: Any) -> list[dict]:
         """Evaluate accesses against consents in a /v1/consent/evaluate payload."""
         return consent_evaluate_request(payload)
+
+    def evaluate_access(self, payload: Any) -> list[dict]:
+        """Evaluate accesses against grants in a /v1/access/evaluate payload."""
+        return access_evaluate_request(payload)
 
     def audit_chain(self, payload: Any) -> dict:
         """Build a tamper-evident evidence chain for a /v1/audit/chain payload."""

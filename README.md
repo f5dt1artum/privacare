@@ -74,6 +74,17 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构非法或数组缺失、为空时返回 422 `invalid_request`；同意缺字段、`consent_id` 重复、范围集合为空或重复、状态或类别非法、时间非法，或结束时间不晚于开始时间时返回 422 `invalid_consent`；使用项缺字段、类别或时间非法时返回 422 `invalid_access`。任何校验失败都不返回部分结果。
 
+### `POST /v1/access/evaluate`
+
+请求级、无状态的最小必要访问授权判定，只处理当前请求，不保存数据，也不替代同意判定。请求体为 JSON 对象：
+
+- `grants`：非空数组，每项为一个授权对象，字段为 `grant_id`（请求内唯一）、`principal_id`、`resource`、`purpose`（均为非空字符串）、`operations`（非空且不重复，仅限 `read`、`update`、`export`、`delete`）、`data_categories`（非空且不重复，仅限五种敏感类别）与 `field_scopes`（非空且不重复的 RFC 6901 JSON Pointer 数组）。
+- `accesses`：非空数组，每项为一个访问对象，字段为 `principal_id`、`resource`、`purpose`、`operation`（四种操作之一）、`data_categories` 与 `fields`（均为非空且不重复的数组，`fields` 为合法 JSON Pointer）。
+
+仅当主体、资源、用途相同，访问操作被授权包含，访问类别是授权类别的子集，且每个访问字段等于某个字段范围或按指针段为其后代时，单条授权才完整覆盖该访问；不得拼接多条授权共同覆盖。多条授权均覆盖时选择 `grant_id` 字典序最小者。响应为 `{"results": [...]}`，按 `accesses` 顺序给出每项的 `index`、`allowed` 与 `reason`：允许时 `reason` 为 `access_granted` 并带 `grant_id`，拒绝时为 `no_matching_grant` 且不带 `grant_id`。响应不回显输入，不修改输入，相同输入结果一致。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构非法或数组缺失、为空时返回 422 `invalid_request`；授权缺字段、`grant_id` 重复、集合为空或重复、操作、类别或指针非法时返回 422 `invalid_grant`；访问缺字段、集合为空或重复、操作、类别或指针非法时返回 422 `invalid_access`。任何校验失败都不返回部分结果。
+
 ### `POST /v1/audit/chain`
 
 防篡改审计证据链建链，无状态；调用方可将上一批响应的 `final_hash` 作为下一批请求的 `anchor_hash` 衔接。请求体为 JSON 对象：
