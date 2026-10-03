@@ -105,10 +105,22 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；根对象非法或 `events` 缺失、为空返回 422 `invalid_request`；事件缺字段、类型或时间非法、`event_id` 重复返回 422 `invalid_audit_event`；锚点非法返回 422 `invalid_anchor`；`evidence` 非等长数组、条目缺字段或哈希格式非法返回 422 `invalid_evidence_chain`。任何校验失败都不返回部分证据，错误响应不含事件值。
 
+### `POST /v1/lineage/trace`
+
+请求级数据血缘追踪，无状态：数据集、流转与查询仅取自当前请求，不保存内容、不修改输入，相同输入结果一致。请求体为 JSON 对象：
+
+- `datasets`：非空数组，每项含 `dataset_id`（请求内唯一的非空字符串）与非空、不重复且仅限五种敏感类别的 `data_categories`。
+- `transfers`：数组（可为空），每项含 `transfer_id`（请求内唯一的非空字符串）、`from_dataset` 与 `to_dataset`（均须引用请求内已存在的数据集且互不相同）、带时区的 RFC 3339 `occurred_at`，以及非空、不重复的 `data_categories`；流转类别必须同时是源数据集与目标数据集类别的子集。
+- `queries`：非空数组，每项含 `dataset_id`（已存在的数据集）、`direction`（仅 `upstream` 或 `downstream`）、起点数据集所含的非空不重复 `data_categories` 集合（须为起点类别的子集）、`max_depth`（1 至 20 的 JSON 整数，布尔值不接受），以及可选的带时区 RFC 3339 `as_of`。
+
+追踪沿请求方向构成有向图：下游从起点沿 `from_dataset -> to_dataset` 前进，上游反向追溯。路径只经过包含全部查询类别、且 `occurred_at` 不晚于 `as_of` 的流转；省略 `as_of` 时使用全部流转。到达数据集以最短边数为距离，环路不会产生重复节点或无限遍历。响应为 `{"results": [...]}`，按查询顺序给出每项的 `index`、`dataset_id`、`direction` 与 `datasets`；`datasets` 含起点及 `max_depth` 内全部可达数据集，每项仅含 `dataset_id`、`distance`（最短边数，起点为 0）与 `transfer_path`（起点为空数组）。多条等长最短路径并存时取 `transfer_id` 序列字典序最小者；清单按 `distance`、再按 `dataset_id` 排序。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构非法或 `datasets`、`queries` 缺失、为空、非数组，或 `transfers` 非数组时返回 422 `invalid_request`；数据集缺字段、`dataset_id` 为空或重复、类别集合为空、重复或非法返回 422 `invalid_dataset`；流转缺字段、字段为空、`transfer_id` 重复、端点相同或引用不存在、时间非法或类别集合非法（含类别不是两端数据集类别的子集）返回 422 `invalid_transfer`；查询缺字段、引用未知数据集、`direction` 非法、`max_depth` 越界或为布尔/非整数、`as_of` 非法，或类别集合为空、重复、非法、不是起点类别的子集时返回 422 `invalid_query`。任何校验失败都不返回部分结果或完整输入；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
 ## 验证
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-当前基线已包含审计证据链的建链与验真能力；后续题目应从已冻结事实出发独立设计并验证其余能力。
+当前基线已包含审计证据链的建链与验真，以及请求级数据血缘追踪能力；后续题目应从已冻结事实出发独立设计并验证其余能力。
