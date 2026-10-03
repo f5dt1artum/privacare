@@ -163,6 +163,22 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；根对象或 `records` 非法返回 422 `invalid_request`；`group_by` 类型错误、重复、指针语法非法、无法解析或解析到容器返回 422 `invalid_group_by`；指标名称、操作、字段组合非法、字段指针非法或字段不是有限数字返回 422 `invalid_metric`；阈值为布尔值、非整数或超出 2 至 1000 返回 422 `invalid_threshold`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
 
+### `POST /v1/query/differential-aggregate`
+
+差分隐私分组聚合发布，无状态：进程不保存记录、噪声密钥或预算账本，每次预算只依据请求中的 `budget` 即时核算。请求体为 JSON 对象：
+
+- `records`：与其他接口一致的非空医疗记录对象数组。
+- `group_by`（可省略或为 `null`）：可为空且不重复的 RFC 6901 JSON Pointer 字符串数组；为空或省略时表示全局分组（唯一公开键为 `[]`）。非空指针须在每条记录上解析为字符串、有限数字、布尔值或 `null`，不得指向对象或数组。
+- `partitions`：非空的**公开分区键**数组；每个键是与 `group_by` 等长的标量数组。不同 JSON 类型互不相等（`null ≠ false ≠ 0`，字符串区分大小写），数字按数值相等（`1 = 1.0`），重复键非法。
+- `metrics`：非空数组，指标 `name` 请求内唯一，`type` 仅限 `count` 或 `sum`，每项含 `epsilon`（大于 0 且不超过 10 的有限数字）。`count` 只统计记录数、不携带其他字段；`sum` 另含非根 JSON Pointer `field`，以及有限数字 `lower`、`upper`（`lower < upper`），且该字段在全部记录中均为有限数字；求和前先把每个字段值截断到 `[lower, upper]`。
+- `budget`：对象，含非负有限数字 `limit` 与 `spent`。本次消耗 `consumed` 为各指标 `epsilon` 之和，**不随分区数增加**；`spent + consumed > limit` 时不得发布。
+- `release_id`：非空发布标识字符串。
+- `noise_secret`：无填充 base64url 字符串，解码后不少于 32 字节。
+
+记录先按 `group_by` 分组，键不属于公开分区的记录被忽略；**所有公开分区都按输入顺序返回**，包括真实计数为零的分区。每个发布值加入尺度为 `敏感度 / epsilon` 的拉普拉斯噪声：`count` 敏感度为 1，`sum` 敏感度为 `upper - lower`。加噪计数为负时按 0 返回。噪声由 `noise_secret`、固定版本串、非空 `release_id`、带类型的分区键与指标名通过 HMAC-SHA256 确定性派生：相同发布重试结果一致，而 `release_id`、分区键或指标名变化时使用相互独立的噪声。响应为 `{"partitions": [...], "budget": {...}}`：每个分区仅含 `key` 与以指标名为键的 `metrics`；`budget` 给出 `consumed`、累计 `spent` 与 `remaining`。所有数值四舍五入保留六位小数。响应与错误均不回显记录或密钥，进程内调用不修改输入。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根对象或 `records` 非法返回 422 `invalid_request`；`group_by` 非法返回 422 `invalid_group_by`；`partitions` 或分区键非法（长度不符、非标量、类型/数值重复）返回 422 `invalid_partition`；指标定义、字段或边界非法返回 422 `invalid_metric`；`budget`、`epsilon` 非法或余额不足返回 422 `invalid_privacy_budget`；`release_id` 或 `noise_secret` 非法返回 422 `invalid_noise_config`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
 ### `POST /v1/compliance/transfer/evaluate`
 
 请求级跨境流转合规判定，无状态：规则与流转仅取自当前请求，不保存内容、不修改输入，相同输入结果一致。请求体为 JSON 对象：
@@ -180,4 +196,4 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-当前基线已包含审计证据链的建链与验真、请求级数据血缘追踪、字段级认证加密的加密、解密与轮换，以及带小群体保护的聚合查询能力；后续题目应从已冻结事实出发独立设计并验证其余能力。
+当前基线已包含审计证据链的建链与验真、请求级数据血缘追踪、字段级认证加密的加密、解密与轮换，带小群体保护的聚合查询，以及带预算核算与确定性拉普拉斯噪声的差分隐私聚合发布能力；后续题目应从已冻结事实出发独立设计并验证其余能力。

@@ -16,6 +16,7 @@ from .classifier import classify_request
 from .compliance import transfer_evaluate_request
 from .consent import consent_evaluate_request
 from .deidentifier import deidentify_request
+from .differential import differential_aggregate_request
 from .encryption import decrypt_request, encrypt_request, rotate_request
 from .lineage import trace_lineage_request
 from .pseudonymizer import pseudonymize_request
@@ -82,6 +83,10 @@ class Service:
     def aggregate_query(self, payload: Any) -> dict:
         """Run a small-group protected /v1/query/aggregate payload."""
         return aggregate_query_request(payload)
+
+    def differential_aggregate(self, payload: Any) -> dict:
+        """Run a differentially private /v1/query/differential-aggregate payload."""
+        return differential_aggregate_request(payload)
 
     def evaluate_transfer(self, payload: Any) -> list[dict]:
         """Evaluate transfers against rules in a /v1/compliance/transfer/evaluate payload."""
