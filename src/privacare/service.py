@@ -14,6 +14,7 @@ from .audit import audit_chain_request, audit_verify_request
 from .classifier import classify_request
 from .consent import consent_evaluate_request
 from .deidentifier import deidentify_request
+from .encryption import decrypt_request, encrypt_request, rotate_request
 from .lineage import trace_lineage_request
 from .pseudonymizer import pseudonymize_request
 from .risk import reidentification_risk_request
@@ -63,3 +64,15 @@ class Service:
     def trace_lineage(self, payload: Any) -> dict:
         """Trace upstream/downstream dataset lineage for a /v1/lineage/trace payload."""
         return trace_lineage_request(payload)
+
+    def encrypt(self, payload: Any) -> list[dict]:
+        """Encrypt record fields for a /v1/encryption/encrypt payload."""
+        return encrypt_request(payload)
+
+    def decrypt(self, payload: Any) -> list[dict]:
+        """Decrypt record envelopes for a /v1/encryption/decrypt payload."""
+        return decrypt_request(payload)
+
+    def rotate_encryption(self, payload: Any) -> list[dict]:
+        """Re-encrypt record envelopes for a /v1/encryption/rotate payload."""
+        return rotate_request(payload)
