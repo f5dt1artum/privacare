@@ -37,6 +37,20 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；缺少 `policy` 返回 422 `invalid_request`；`policy` 不是对象、为空、含未知类别或动作非法返回 422 `invalid_policy`。任何校验失败都不返回部分结果。
 
+### `POST /v1/pseudonymize`
+
+请求级、无状态的批量假名化，可在记录间保持关联关系。请求体为 JSON 对象：
+
+- `records`：与其他接口一致的非空医疗记录对象数组。
+- `fields`：非空且不重复的 RFC 6901 JSON Pointer 字符串数组；支持对象、数组下标与 `~0`、`~1` 转义。每个指针在每条记录上都必须解析为非空字符串叶子（缺失、数组越界、索引含前导零、`-` 索引、目标为对象/数组或非字符串/空字符串时整个请求失败）。
+- `key_id`：非空密钥版本标识。
+- `secret`：无填充 base64url 字符串，解码后不少于 32 字节。
+- `context`（可选）：非空字符串，省略时采用固定默认值 `privacare.pseudonymize.v1`。
+
+目标叶子替换为 `pv1.<key_id>.<token>`，其中 `token` 为 43 个无填充 base64url 字符，由 HMAC-SHA256 以 `secret` 对 `key_id`、`context`、规范化路径与原值的组合计算得到。同一 `secret`、`key_id`、`context`、规范化路径与原值始终得到相同假名；其中任一项变化都产生不同假名。响应为 `{"results": [...]}`，按输入顺序给出每条记录的 `index`、变换后的 `record` 与 `transformations`；清单按 `path` 字典序排列，每项只含 `path` 与 `key_id`。非目标内容保持不变；进程内调用不修改输入，相同输入结果一致，不在请求间保存记录、密钥或映射；响应与错误均不回显原值或 `secret`。
+
+错误语义：非 `application/json` 返回 415 `unsupported_media_type`；JSON 解析失败返回 400 `invalid_json`；根对象或 `records` 非法返回 422 `invalid_request`；`fields` 缺失、类型错误、为空、重复、指针非法，或任一指针未解析为非空字符串叶子返回 422 `invalid_fields`；`key_id` 或 `secret` 不合规返回 422 `invalid_key`；`context` 非法返回 422 `invalid_context`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
 ### `POST /v1/reidentification-risk`
 
 基于 k 匿名的重标识风险度量。请求体为 JSON 对象：

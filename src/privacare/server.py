@@ -11,16 +11,26 @@ from .audit import InvalidAnchor, InvalidAuditEvent, InvalidEvidenceChain
 from .classifier import InvalidRequest, InvalidSchema
 from .consent import InvalidAccess, InvalidConsent
 from .deidentifier import InvalidPolicy
+from .pseudonymizer import InvalidContext, InvalidFields, InvalidKey
 from .risk import InvalidK, InvalidQuasiIdentifiers
 from .service import Service
 
 CLASSIFY_PATH = "/v1/classify"
 DEIDENTIFY_PATH = "/v1/deidentify"
+PSEUDONYMIZE_PATH = "/v1/pseudonymize"
 RISK_PATH = "/v1/reidentification-risk"
 CONSENT_PATH = "/v1/consent/evaluate"
 AUDIT_CHAIN_PATH = "/v1/audit/chain"
 AUDIT_VERIFY_PATH = "/v1/audit/verify"
-KNOWN_POST_PATHS = (CLASSIFY_PATH, DEIDENTIFY_PATH, RISK_PATH, CONSENT_PATH, AUDIT_CHAIN_PATH, AUDIT_VERIFY_PATH)
+KNOWN_POST_PATHS = (
+    CLASSIFY_PATH,
+    DEIDENTIFY_PATH,
+    PSEUDONYMIZE_PATH,
+    RISK_PATH,
+    CONSENT_PATH,
+    AUDIT_CHAIN_PATH,
+    AUDIT_VERIFY_PATH,
+)
 
 
 def env_address() -> tuple[str, int]:
@@ -78,6 +88,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == DEIDENTIFY_PATH:
             self.handle_json_endpoint(self.service.deidentify)
             return
+        if self.path == PSEUDONYMIZE_PATH:
+            self.handle_json_endpoint(self.service.pseudonymize)
+            return
         if self.path == RISK_PATH:
             self.handle_json_endpoint(self.service.reidentification_risk, wrap_results=False)
             return
@@ -127,6 +140,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         except InvalidPolicy as exc:
             self.send_error_json(422, "invalid_policy", str(exc))
+            return
+        except InvalidFields as exc:
+            self.send_error_json(422, "invalid_fields", str(exc))
+            return
+        except InvalidKey as exc:
+            self.send_error_json(422, "invalid_key", str(exc))
+            return
+        except InvalidContext as exc:
+            self.send_error_json(422, "invalid_context", str(exc))
             return
         except InvalidQuasiIdentifiers as exc:
             self.send_error_json(422, "invalid_quasi_identifiers", str(exc))
