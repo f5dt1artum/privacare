@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .access import InvalidAccess as InvalidAccessEntry
 from .access import InvalidGrant
+from .aggregate import InvalidGroupBy, InvalidMetric, InvalidThreshold
 from .audit import InvalidAnchor, InvalidAuditEvent, InvalidEvidenceChain
 from .classifier import InvalidRequest, InvalidSchema
 from .consent import InvalidAccess, InvalidConsent
@@ -31,6 +32,7 @@ LINEAGE_TRACE_PATH = "/v1/lineage/trace"
 ENCRYPT_PATH = "/v1/encryption/encrypt"
 DECRYPT_PATH = "/v1/encryption/decrypt"
 ROTATE_PATH = "/v1/encryption/rotate"
+AGGREGATE_PATH = "/v1/query/aggregate"
 KNOWN_POST_PATHS = (
     CLASSIFY_PATH,
     DEIDENTIFY_PATH,
@@ -44,6 +46,7 @@ KNOWN_POST_PATHS = (
     ENCRYPT_PATH,
     DECRYPT_PATH,
     ROTATE_PATH,
+    AGGREGATE_PATH,
 )
 
 
@@ -131,6 +134,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == ROTATE_PATH:
             self.handle_json_endpoint(self.service.rotate_encryption)
+            return
+        if self.path == AGGREGATE_PATH:
+            self.handle_json_endpoint(self.service.aggregate_query, wrap_results=False)
             return
         self.not_found()
 
@@ -220,6 +226,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         except InvalidCiphertext as exc:
             self.send_error_json(422, "invalid_ciphertext", str(exc))
+            return
+        except InvalidGroupBy as exc:
+            self.send_error_json(422, "invalid_group_by", str(exc))
+            return
+        except InvalidMetric as exc:
+            self.send_error_json(422, "invalid_metric", str(exc))
+            return
+        except InvalidThreshold as exc:
+            self.send_error_json(422, "invalid_threshold", str(exc))
             return
         self.send_json(200, {"results": output} if wrap_results else output)
 

@@ -10,6 +10,7 @@ from typing import Any
 
 from . import __version__
 from .access import access_evaluate_request
+from .aggregate import aggregate_query_request
 from .audit import audit_chain_request, audit_verify_request
 from .classifier import classify_request
 from .consent import consent_evaluate_request
@@ -76,3 +77,7 @@ class Service:
     def rotate_encryption(self, payload: Any) -> list[dict]:
         """Re-encrypt record envelopes for a /v1/encryption/rotate payload."""
         return rotate_request(payload)
+
+    def aggregate_query(self, payload: Any) -> dict:
+        """Run a small-group protected /v1/query/aggregate payload."""
+        return aggregate_query_request(payload)
