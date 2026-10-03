@@ -19,6 +19,7 @@ from .encryption import decrypt_request, encrypt_request, rotate_request
 from .lineage import trace_lineage_request
 from .pseudonymizer import pseudonymize_request
 from .risk import reidentification_risk_request
+from .transfer import transfer_evaluate_request
 
 
 class Service:
@@ -81,3 +82,7 @@ class Service:
     def aggregate_query(self, payload: Any) -> dict:
         """Run a small-group protected /v1/query/aggregate payload."""
         return aggregate_query_request(payload)
+
+    def evaluate_transfer(self, payload: Any) -> list[dict]:
+        """Evaluate transfers against rules in a /v1/compliance/transfer/evaluate payload."""
+        return transfer_evaluate_request(payload)
