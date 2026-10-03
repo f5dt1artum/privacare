@@ -105,6 +105,18 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；根对象非法或 `events` 缺失、为空返回 422 `invalid_request`；事件缺字段、类型或时间非法、`event_id` 重复返回 422 `invalid_audit_event`；锚点非法返回 422 `invalid_anchor`；`evidence` 非等长数组、条目缺字段或哈希格式非法返回 422 `invalid_evidence_chain`。任何校验失败都不返回部分证据，错误响应不含事件值。
 
+### `POST /v1/lineage/trace`
+
+请求级数据血缘追踪，无状态、不保存任何内容、不修改输入，仅按本次请求给出的数据集与流转计算上游或下游可达性。请求体为 JSON 对象：
+
+- `datasets`：非空数组，每项含请求内唯一的非空 `dataset_id`，以及非空、不重复且仅限五种敏感类别的 `data_categories`。
+- `transfers`：数组（可为空），每项含请求内唯一的非空 `transfer_id`、均已存在且互不相同的 `from_dataset` 与 `to_dataset`、带时区的 RFC 3339 `occurred_at`，以及非空、不重复的 `data_categories`；流转类别必须同时是源数据集与目标数据集类别的子集。
+- `queries`：非空数组，每项含已存在的 `dataset_id`、仅为 `upstream` 或 `downstream` 的 `direction`、起点类别子集的非空不重复 `data_categories`、`max_depth`，以及可选的带时区 RFC 3339 `as_of`。`max_depth` 仅接受 1 至 20 的 JSON 整数（布尔值不接受）。
+
+追踪只经过包含全部查询类别且 `occurred_at` 不晚于 `as_of` 的流转；省略 `as_of` 时使用全部流转。响应为 `{"results": [...]}`，按查询顺序给出每项的 `index`、`dataset_id`、`direction` 与 `datasets`。`datasets` 含起点及 `max_depth` 内可达项，每项仅含 `dataset_id`、最短边数 `distance` 与 `transfer_path`；起点距离为 0、路径为空。存在多条等长最短路径时取 `transfer_id` 序列字典序最小者，清单按 `distance`、`dataset_id` 排序。环路上同一节点只出现一次且不会无限遍历。相同输入结果一致，响应不回显输入内容。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构或 `datasets`、`transfers`、`queries` 数组结构非法返回 422 `invalid_request`；数据集缺字段、`dataset_id` 重复或类别非法返回 422 `invalid_dataset`；流转缺字段、引用未知或相同数据集、时间非法、类别非法或不是两端子集、`transfer_id` 重复返回 422 `invalid_transfer`；查询缺字段、引用未知、`direction` 或 `max_depth` 越界、`as_of` 时间非法、类别非法或不是起点子集返回 422 `invalid_query`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
 ## 验证
 
 ```bash

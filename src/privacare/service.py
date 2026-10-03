@@ -14,6 +14,7 @@ from .audit import audit_chain_request, audit_verify_request
 from .classifier import classify_request
 from .consent import consent_evaluate_request
 from .deidentifier import deidentify_request
+from .lineage import trace_lineage as trace_lineage_request
 from .pseudonymizer import pseudonymize_request
 from .risk import reidentification_risk_request
 
@@ -58,3 +59,7 @@ class Service:
     def audit_verify(self, payload: Any) -> dict:
         """Recompute and check an evidence chain for a /v1/audit/verify payload."""
         return audit_verify_request(payload)
+
+    def trace_lineage(self, payload: Any) -> dict:
+        """Trace upstream/downstream dataset lineage for a /v1/lineage/trace payload."""
+        return trace_lineage_request(payload)

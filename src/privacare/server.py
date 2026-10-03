@@ -13,6 +13,8 @@ from .audit import InvalidAnchor, InvalidAuditEvent, InvalidEvidenceChain
 from .classifier import InvalidRequest, InvalidSchema
 from .consent import InvalidAccess, InvalidConsent
 from .deidentifier import InvalidPolicy
+from .lineage import InvalidDataset, InvalidQuery as InvalidLineageQuery
+from .lineage import InvalidTransfer
 from .pseudonymizer import InvalidContext, InvalidFields, InvalidKey
 from .risk import InvalidK, InvalidQuasiIdentifiers
 from .service import Service
@@ -25,6 +27,7 @@ CONSENT_PATH = "/v1/consent/evaluate"
 ACCESS_PATH = "/v1/access/evaluate"
 AUDIT_CHAIN_PATH = "/v1/audit/chain"
 AUDIT_VERIFY_PATH = "/v1/audit/verify"
+LINEAGE_TRACE_PATH = "/v1/lineage/trace"
 KNOWN_POST_PATHS = (
     CLASSIFY_PATH,
     DEIDENTIFY_PATH,
@@ -34,6 +37,7 @@ KNOWN_POST_PATHS = (
     ACCESS_PATH,
     AUDIT_CHAIN_PATH,
     AUDIT_VERIFY_PATH,
+    LINEAGE_TRACE_PATH,
 )
 
 
@@ -110,6 +114,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == AUDIT_VERIFY_PATH:
             self.handle_json_endpoint(self.service.audit_verify, wrap_results=False)
             return
+        if self.path == LINEAGE_TRACE_PATH:
+            self.handle_json_endpoint(self.service.trace_lineage, wrap_results=False)
+            return
         self.not_found()
 
     def do_PUT(self) -> None:
@@ -183,6 +190,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         except InvalidEvidenceChain as exc:
             self.send_error_json(422, "invalid_evidence_chain", str(exc))
+            return
+        except InvalidDataset as exc:
+            self.send_error_json(422, "invalid_dataset", str(exc))
+            return
+        except InvalidTransfer as exc:
+            self.send_error_json(422, "invalid_transfer", str(exc))
+            return
+        except InvalidLineageQuery as exc:
+            self.send_error_json(422, "invalid_query", str(exc))
             return
         self.send_json(200, {"results": output} if wrap_results else output)
 
