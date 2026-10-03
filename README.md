@@ -37,6 +37,20 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；缺少 `policy` 返回 422 `invalid_request`；`policy` 不是对象、为空、含未知类别或动作非法返回 422 `invalid_policy`。任何校验失败都不返回部分结果。
 
+### `POST /v1/pseudonymize`
+
+请求级、无状态的确定性假名化，可在不保存任何映射的前提下保持跨记录关联。请求体为 JSON 对象：
+
+- `records`：与其他接口一致的非空医疗记录对象数组。
+- `fields`：非空、不重复的 JSON Pointer（RFC 6901）字符串数组，支持对象、数组及 `~0`、`~1` 转义。每个指针在每条记录上都必须解析为非空字符串叶子；缺失、数组越界、索引含前导零（`"0"` 本身除外）、`-`、目标为对象/数组/`null`/`true`/`false`/数字/空字符串时整个请求失败。
+- `key_id`：非空密钥版本标识字符串。
+- `secret`：无填充 base64url 字符串，解码后不少于 32 字节。
+- `context`（可选）：非空字符串，省略或为 `null` 时采用固定默认值 `privacare.pseudonymize.v1`。
+
+每个目标值替换为 `pv1.<key_id>.<token>`；`token` 为 43 个无填充 base64url 字符，是对 `key_id`、`context`、规范化路径（转义正确的 JSON Pointer）与原值以请求 `secret` 计算 HMAC-SHA256 后编码而得。同一 `secret`、`key_id`、`context`、规范化路径与原值组合始终得到相同假名，上述任一项变化都产生不同假名——同值同路径跨记录得到相同假名，同值不同路径得到不同假名。响应为 `{"results": [...]}`，按输入顺序给出每条记录的 `index`、变换后的 `record` 与 `transformations`；清单按 `path` 字典序排列，每项只含 `path` 与 `key_id`。非目标内容保持不变；响应及错误均不回显原值或 `secret`；进程内调用不修改输入，相同输入结果一致，请求之间不保存记录、密钥或映射。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根对象或 `records` 非法返回 422 `invalid_request`；`fields` 缺失、类型错误、为空、重复、指针非法，或路径缺失、越界、索引含前导零、目标不是非空字符串叶子时返回 422 `invalid_fields`；`key_id` 或 `secret` 不合规返回 422 `invalid_key`；`context` 非法返回 422 `invalid_context`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
 ### `POST /v1/reidentification-risk`
 
 基于 k 匿名的重标识风险度量。请求体为 JSON 对象：
