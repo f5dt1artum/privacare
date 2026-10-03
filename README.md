@@ -74,6 +74,17 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构非法或数组缺失、为空时返回 422 `invalid_request`；同意缺字段、`consent_id` 重复、范围集合为空或重复、状态或类别非法、时间非法，或结束时间不晚于开始时间时返回 422 `invalid_consent`；使用项缺字段、类别或时间非法时返回 422 `invalid_access`。任何校验失败都不返回部分结果。
 
+### `POST /v1/consent/timeline`
+
+请求级同意生命周期重建，无状态：事件与查询仅取自当前请求，不保存内容、不修改输入，相同输入结果一致。请求体为 JSON 对象：
+
+- `events`：非空数组，每项为一个生命周期事件，字段为 `event_id`（请求内唯一的非空字符串）、`consent_id`（非空字符串）、`version`（每个同意从 1 连续递增的正整数，布尔值不接受）、带时区的 RFC 3339 `occurred_at` 与 `type`（仅 `grant`、`amend`、`revoke`）。`grant` 只能是版本 1，且须给出非空 `subject_id`、`purposes`、`data_categories`、`recipients`、`valid_from`、`valid_until`；范围数组非空、不重复，类别仅限五种敏感类别，结束时间必须晚于开始时间。`amend` 完整替换范围与有效期并沿用 `subject_id`，不得携带 `subject_id`；`revoke` 不得携带上述任一字段。每个同意只能先 `grant`，再经若干 `amend`，最后至多一次 `revoke`；`version` 增大时 `occurred_at` 不得倒退，撤回后不能再有事件。
+- `queries`：非空数组，每项含 `consent_id`（非空字符串）与带时区的 RFC 3339 `as_of`。
+
+查询按 `consent_id` 纳入 `occurred_at` 不晚于 `as_of` 的事件并取最高版本重建状态：尚未授予时 `status` 为 `not_found` 且无快照；已撤回为 `revoked`；`as_of` 早于当前 `valid_from` 为 `pending`，不早于 `valid_until` 为 `expired`，其余为 `active`。响应为 `{"results": [...]}`，与 `queries` 同序；除 `not_found` 外每项含 `consent_id`、`status`、`version`、`last_event_id` 与当前完整同意快照 `snapshot`（含 `consent_id`、`subject_id`、排序后的 `purposes`、`data_categories`、`recipients` 及 `valid_from`、`valid_until`）。事件可任意排列，结果不受其输入顺序影响。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构非法或 `events`、`queries` 缺失、为空、非数组时返回 422 `invalid_request`；事件字段、集合、时间、版本或序列非法返回 422 `invalid_consent_event`；查询非法返回 422 `invalid_query`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
 ### `POST /v1/access/evaluate`
 
 无状态的最小必要访问授权判定，仅处理当前请求，不保存数据，也不替代同意判定。请求体为 JSON 对象：

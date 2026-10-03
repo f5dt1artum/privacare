@@ -14,7 +14,7 @@ from .audit import InvalidAnchor, InvalidAuditEvent, InvalidEvidenceChain
 from .classifier import InvalidRequest, InvalidSchema
 from .compliance import InvalidRule
 from .compliance import InvalidTransfer as InvalidComplianceTransfer
-from .consent import InvalidAccess, InvalidConsent
+from .consent import InvalidAccess, InvalidConsent, InvalidConsentEvent, InvalidConsentQuery
 from .deidentifier import InvalidPolicy
 from .differential import InvalidNoiseConfig, InvalidPartition, InvalidPrivacyBudget
 from .encryption import InvalidCiphertext, InvalidEnvelope
@@ -28,6 +28,7 @@ DEIDENTIFY_PATH = "/v1/deidentify"
 PSEUDONYMIZE_PATH = "/v1/pseudonymize"
 RISK_PATH = "/v1/reidentification-risk"
 CONSENT_PATH = "/v1/consent/evaluate"
+CONSENT_TIMELINE_PATH = "/v1/consent/timeline"
 ACCESS_PATH = "/v1/access/evaluate"
 AUDIT_CHAIN_PATH = "/v1/audit/chain"
 AUDIT_VERIFY_PATH = "/v1/audit/verify"
@@ -44,6 +45,7 @@ KNOWN_POST_PATHS = (
     PSEUDONYMIZE_PATH,
     RISK_PATH,
     CONSENT_PATH,
+    CONSENT_TIMELINE_PATH,
     ACCESS_PATH,
     AUDIT_CHAIN_PATH,
     AUDIT_VERIFY_PATH,
@@ -120,6 +122,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == CONSENT_PATH:
             self.handle_json_endpoint(self.service.evaluate_consent)
+            return
+        if self.path == CONSENT_TIMELINE_PATH:
+            self.handle_json_endpoint(self.service.consent_timeline)
             return
         if self.path == ACCESS_PATH:
             self.handle_json_endpoint(self.service.evaluate_access)
@@ -206,6 +211,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         except InvalidConsent as exc:
             self.send_error_json(422, "invalid_consent", str(exc))
+            return
+        except InvalidConsentEvent as exc:
+            self.send_error_json(422, "invalid_consent_event", str(exc))
+            return
+        except InvalidConsentQuery as exc:
+            self.send_error_json(422, "invalid_query", str(exc))
             return
         except InvalidAccess as exc:
             self.send_error_json(422, "invalid_access", str(exc))

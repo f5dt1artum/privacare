@@ -1,9 +1,9 @@
-"""Request-level consent and purpose-constraint evaluation.
+"""Request-level consent evaluation and lifecycle reconstruction.
 
-Pure and request-scoped like the other modules: consents and accesses are
-read from the current payload only, nothing is persisted between requests,
-the caller's data is never mutated, and identical inputs always produce
-identical results.
+Pure and request-scoped like the other modules: consents, accesses, events
+and queries are read from the current payload only, nothing is persisted
+between requests, the caller's data is never mutated, and identical inputs
+always produce identical results.
 """
 
 from __future__ import annotations
@@ -50,6 +50,14 @@ class InvalidConsent(ValueError):
 
 class InvalidAccess(ValueError):
     """An access entry is malformed."""
+
+
+class InvalidConsentEvent(ValueError):
+    """A consent lifecycle event is malformed."""
+
+
+class InvalidConsentQuery(ValueError):
+    """A consent timeline query is malformed."""
 
 
 def _parse_time(raw: Any, error: type[ValueError]) -> datetime:
@@ -198,4 +206,193 @@ def consent_evaluate_request(payload: Any) -> list[dict]:
                     "consent_id": consent["consent_id"],
                 }
             )
+    return results
+
+
+_EVENT_TYPES: tuple[str, ...] = ("grant", "amend", "revoke")
+_EVENT_TYPE_SET = frozenset(_EVENT_TYPES)
+
+_EVENT_COMMON_FIELDS = ("event_id", "consent_id", "version", "occurred_at", "type")
+
+# Fields that carry the consent scope and validity window on grant/amend.
+_SCOPE_FIELDS = ("purposes", "data_categories", "recipients", "valid_from", "valid_until")
+
+_QUERY_FIELDS = ("consent_id", "as_of")
+
+
+def _parse_event(raw: Any) -> dict:
+    if not isinstance(raw, dict):
+        raise InvalidConsentEvent("each event must be an object")
+    for field in _EVENT_COMMON_FIELDS:
+        if field not in raw:
+            raise InvalidConsentEvent(f"event is missing {field}")
+    event_id = _require_string(raw, "event_id", InvalidConsentEvent)
+    consent_id = _require_string(raw, "consent_id", InvalidConsentEvent)
+    version = raw["version"]
+    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        raise InvalidConsentEvent("version must be a positive integer")
+    occurred_at = _parse_time(raw["occurred_at"], InvalidConsentEvent)
+    event_type = raw["type"]
+    if not isinstance(event_type, str) or event_type not in _EVENT_TYPE_SET:
+        raise InvalidConsentEvent("type must be 'grant', 'amend' or 'revoke'")
+    event = {
+        "event_id": event_id,
+        "consent_id": consent_id,
+        "version": version,
+        "occurred_at": occurred_at,
+        "type": event_type,
+    }
+    if event_type == "revoke":
+        for field in ("subject_id",) + _SCOPE_FIELDS:
+            if field in raw:
+                raise InvalidConsentEvent(f"revoke must not carry {field}")
+        return event
+    if event_type == "amend" and "subject_id" in raw:
+        raise InvalidConsentEvent("amend must not carry subject_id")
+    if event_type == "grant":
+        event["subject_id"] = _require_string(raw, "subject_id", InvalidConsentEvent)
+    for field in _SCOPE_FIELDS:
+        if field not in raw:
+            raise InvalidConsentEvent(f"{event_type} is missing {field}")
+    event["purposes"] = _require_string_set(raw, "purposes", InvalidConsentEvent)
+    data_categories = _require_string_set(raw, "data_categories", InvalidConsentEvent)
+    if not data_categories <= _CATEGORY_SET:
+        raise InvalidConsentEvent("data_categories contains an unsupported category")
+    event["data_categories"] = data_categories
+    event["recipients"] = _require_string_set(raw, "recipients", InvalidConsentEvent)
+    valid_from = _parse_time(raw["valid_from"], InvalidConsentEvent)
+    valid_until = _parse_time(raw["valid_until"], InvalidConsentEvent)
+    if valid_until <= valid_from:
+        raise InvalidConsentEvent("valid_until must be later than valid_from")
+    event["valid_from"] = valid_from
+    event["valid_until"] = valid_until
+    event["valid_from_raw"] = raw["valid_from"]
+    event["valid_until_raw"] = raw["valid_until"]
+    return event
+
+
+def _build_histories(events: list[dict]) -> dict[str, list[dict]]:
+    """Group events per consent and check the lifecycle sequence rules."""
+    by_consent: dict[str, list[dict]] = {}
+    for event in events:
+        by_consent.setdefault(event["consent_id"], []).append(event)
+    histories: dict[str, list[dict]] = {}
+    for consent_id, group in by_consent.items():
+        group.sort(key=lambda event: event["version"])
+        if [event["version"] for event in group] != list(range(1, len(group) + 1)):
+            raise InvalidConsentEvent("version must increase consecutively from 1 per consent")
+        if group[0]["type"] != "grant":
+            raise InvalidConsentEvent("the first event of a consent must be a grant")
+        revoked = False
+        previous_time: datetime | None = None
+        for event in group:
+            if revoked:
+                raise InvalidConsentEvent("no events may follow a revoke")
+            if event["type"] == "grant" and event["version"] != 1:
+                raise InvalidConsentEvent("grant is only allowed at version 1")
+            if event["type"] == "revoke":
+                revoked = True
+            if previous_time is not None and event["occurred_at"] < previous_time:
+                raise InvalidConsentEvent("occurred_at must not go backward across versions")
+            previous_time = event["occurred_at"]
+        histories[consent_id] = group
+    return histories
+
+
+def _reconstruct(eligible: list[dict]) -> dict:
+    """Fold the eligible grant/amend events into the current consent state."""
+    state: dict = {}
+    for event in eligible:
+        if event["type"] == "grant":
+            state = {
+                "subject_id": event["subject_id"],
+                "purposes": event["purposes"],
+                "data_categories": event["data_categories"],
+                "recipients": event["recipients"],
+                "valid_from": event["valid_from"],
+                "valid_until": event["valid_until"],
+                "valid_from_raw": event["valid_from_raw"],
+                "valid_until_raw": event["valid_until_raw"],
+            }
+        elif event["type"] == "amend":
+            state.update(
+                {
+                    "purposes": event["purposes"],
+                    "data_categories": event["data_categories"],
+                    "recipients": event["recipients"],
+                    "valid_from": event["valid_from"],
+                    "valid_until": event["valid_until"],
+                    "valid_from_raw": event["valid_from_raw"],
+                    "valid_until_raw": event["valid_until_raw"],
+                }
+            )
+    return state
+
+
+def _parse_timeline_query(raw: Any) -> dict:
+    if not isinstance(raw, dict):
+        raise InvalidConsentQuery("each query must be an object")
+    for field in _QUERY_FIELDS:
+        if field not in raw:
+            raise InvalidConsentQuery(f"query is missing {field}")
+    consent_id = _require_string(raw, "consent_id", InvalidConsentQuery)
+    as_of = _parse_time(raw["as_of"], InvalidConsentQuery)
+    return {"consent_id": consent_id, "as_of": as_of}
+
+
+def consent_timeline_request(payload: Any) -> list[dict]:
+    """Validate a /v1/consent/timeline payload and rebuild every queried state."""
+    if not isinstance(payload, dict):
+        raise InvalidRequest("request body must be a JSON object")
+    raw_events = payload.get("events")
+    if not isinstance(raw_events, list) or not raw_events:
+        raise InvalidRequest("events must be a non-empty array")
+    raw_queries = payload.get("queries")
+    if not isinstance(raw_queries, list) or not raw_queries:
+        raise InvalidRequest("queries must be a non-empty array")
+
+    events = [_parse_event(raw) for raw in raw_events]
+    seen_ids: set[str] = set()
+    for event in events:
+        if event["event_id"] in seen_ids:
+            raise InvalidConsentEvent("event_id must be unique within the request")
+        seen_ids.add(event["event_id"])
+    histories = _build_histories(events)
+    queries = [_parse_timeline_query(raw) for raw in raw_queries]
+
+    results: list[dict] = []
+    for query in queries:
+        history = histories.get(query["consent_id"], [])
+        eligible = [event for event in history if event["occurred_at"] <= query["as_of"]]
+        if not eligible:
+            results.append({"consent_id": query["consent_id"], "status": "not_found"})
+            continue
+        eligible.sort(key=lambda event: event["version"])
+        last = eligible[-1]
+        state = _reconstruct(eligible)
+        if last["type"] == "revoke":
+            status = "revoked"
+        elif query["as_of"] < state["valid_from"]:
+            status = "pending"
+        elif query["as_of"] >= state["valid_until"]:
+            status = "expired"
+        else:
+            status = "active"
+        results.append(
+            {
+                "consent_id": query["consent_id"],
+                "status": status,
+                "version": last["version"],
+                "last_event_id": last["event_id"],
+                "snapshot": {
+                    "consent_id": query["consent_id"],
+                    "subject_id": state["subject_id"],
+                    "purposes": sorted(state["purposes"]),
+                    "data_categories": sorted(state["data_categories"]),
+                    "recipients": sorted(state["recipients"]),
+                    "valid_from": state["valid_from_raw"],
+                    "valid_until": state["valid_until_raw"],
+                },
+            }
+        )
     return results
