@@ -7,6 +7,8 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from .access import InvalidAccess as InvalidAccessEntry
+from .access import InvalidGrant
 from .audit import InvalidAnchor, InvalidAuditEvent, InvalidEvidenceChain
 from .classifier import InvalidRequest, InvalidSchema
 from .consent import InvalidAccess, InvalidConsent
@@ -20,6 +22,7 @@ DEIDENTIFY_PATH = "/v1/deidentify"
 PSEUDONYMIZE_PATH = "/v1/pseudonymize"
 RISK_PATH = "/v1/reidentification-risk"
 CONSENT_PATH = "/v1/consent/evaluate"
+ACCESS_PATH = "/v1/access/evaluate"
 AUDIT_CHAIN_PATH = "/v1/audit/chain"
 AUDIT_VERIFY_PATH = "/v1/audit/verify"
 KNOWN_POST_PATHS = (
@@ -28,6 +31,7 @@ KNOWN_POST_PATHS = (
     PSEUDONYMIZE_PATH,
     RISK_PATH,
     CONSENT_PATH,
+    ACCESS_PATH,
     AUDIT_CHAIN_PATH,
     AUDIT_VERIFY_PATH,
 )
@@ -97,6 +101,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == CONSENT_PATH:
             self.handle_json_endpoint(self.service.evaluate_consent)
             return
+        if self.path == ACCESS_PATH:
+            self.handle_json_endpoint(self.service.evaluate_access)
+            return
         if self.path == AUDIT_CHAIN_PATH:
             self.handle_json_endpoint(self.service.audit_chain, wrap_results=False)
             return
@@ -160,6 +167,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error_json(422, "invalid_consent", str(exc))
             return
         except InvalidAccess as exc:
+            self.send_error_json(422, "invalid_access", str(exc))
+            return
+        except InvalidGrant as exc:
+            self.send_error_json(422, "invalid_grant", str(exc))
+            return
+        except InvalidAccessEntry as exc:
             self.send_error_json(422, "invalid_access", str(exc))
             return
         except InvalidAuditEvent as exc:
