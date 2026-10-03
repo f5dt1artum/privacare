@@ -163,6 +163,17 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；根对象或 `records` 非法返回 422 `invalid_request`；`group_by` 类型错误、重复、指针语法非法、无法解析或解析到容器返回 422 `invalid_group_by`；指标名称、操作、字段组合非法、字段指针非法或字段不是有限数字返回 422 `invalid_metric`；阈值为布尔值、非整数或超出 2 至 1000 返回 422 `invalid_threshold`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
 
+### `POST /v1/compliance/transfer/evaluate`
+
+请求级跨境流转合规判定，无状态：规则与流转仅取自当前请求，不保存内容、不修改输入，相同输入结果一致。请求体为 JSON 对象：
+
+- `rules`：非空数组，每项为一个规则对象，字段为 `rule_id`（请求内唯一的非空字符串）、`priority`（0 至 1000 的 JSON 整数，布尔值不接受）、`effect`（`allow` 或 `deny`）、`source_jurisdictions`、`destination_jurisdictions`、`purposes`、`legal_bases`（均为非空且不重复的字符串数组）、`data_categories`（非空、不重复且仅限五种敏感类别），以及带时区的 RFC 3339 `valid_from` 与 `valid_until`（结束时间必须晚于开始时间）。
+- `transfers`：非空数组，每项为一个流转对象，字段为 `transfer_id`（请求内唯一的非空字符串）、互不相同的 `source_jurisdiction` 与 `destination_jurisdiction`、非空 `purpose` 与 `legal_basis`、非空不重复且仅限五种敏感类别的 `data_categories`，以及带时区的 RFC 3339 `requested_at`。
+
+当某条规则的来源、目的、用途、法律基础集合分别命中流转取值，流转类别是规则类别的子集，且 `requested_at` 不早于 `valid_from` 并早于 `valid_until` 时，该规则匹配该流转；规则不得组合。每条流转选择 `priority` 最高的匹配规则，同优先级先选 `deny`，再取 `rule_id` 字典序最小者；无匹配规则时默认拒绝。响应为 `{"results": [...]}`，按流转顺序给出每项的 `index`、`transfer_id`、`allowed` 与 `reason`：命中 `allow` 时 `reason` 为 `transfer_allowed`，命中 `deny` 时为 `transfer_denied`，均带 `rule_id`；默认拒绝时为 `no_matching_rule` 且不带 `rule_id`。响应不回显规则、法律基础或类别。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构非法或 `rules`、`transfers` 缺失、为空、非数组时返回 422 `invalid_request`；规则缺字段、`rule_id` 重复、`priority` 或 `effect` 非法、集合为空或重复、类别非法、时间非法或结束时间不晚于开始时间时返回 422 `invalid_rule`；流转缺字段、`transfer_id` 重复、来源与目的相同、类别或时间非法时返回 422 `invalid_transfer`。任何校验失败都不返回部分结果，错误响应不回显输入；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
 ## 验证
 
 ```bash

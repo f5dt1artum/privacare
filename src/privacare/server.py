@@ -12,6 +12,8 @@ from .access import InvalidGrant
 from .aggregate import InvalidGroupBy, InvalidMetric, InvalidThreshold
 from .audit import InvalidAnchor, InvalidAuditEvent, InvalidEvidenceChain
 from .classifier import InvalidRequest, InvalidSchema
+from .compliance import InvalidRule
+from .compliance import InvalidTransfer as InvalidComplianceTransfer
 from .consent import InvalidAccess, InvalidConsent
 from .deidentifier import InvalidPolicy
 from .encryption import InvalidCiphertext, InvalidEnvelope
@@ -33,6 +35,7 @@ ENCRYPT_PATH = "/v1/encryption/encrypt"
 DECRYPT_PATH = "/v1/encryption/decrypt"
 ROTATE_PATH = "/v1/encryption/rotate"
 AGGREGATE_PATH = "/v1/query/aggregate"
+TRANSFER_EVALUATE_PATH = "/v1/compliance/transfer/evaluate"
 KNOWN_POST_PATHS = (
     CLASSIFY_PATH,
     DEIDENTIFY_PATH,
@@ -47,6 +50,7 @@ KNOWN_POST_PATHS = (
     DECRYPT_PATH,
     ROTATE_PATH,
     AGGREGATE_PATH,
+    TRANSFER_EVALUATE_PATH,
 )
 
 
@@ -137,6 +141,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == AGGREGATE_PATH:
             self.handle_json_endpoint(self.service.aggregate_query, wrap_results=False)
+            return
+        if self.path == TRANSFER_EVALUATE_PATH:
+            self.handle_json_endpoint(self.service.evaluate_transfer)
             return
         self.not_found()
 
@@ -235,6 +242,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         except InvalidThreshold as exc:
             self.send_error_json(422, "invalid_threshold", str(exc))
+            return
+        except InvalidRule as exc:
+            self.send_error_json(422, "invalid_rule", str(exc))
+            return
+        except InvalidComplianceTransfer as exc:
+            self.send_error_json(422, "invalid_transfer", str(exc))
             return
         self.send_json(200, {"results": output} if wrap_results else output)
 
