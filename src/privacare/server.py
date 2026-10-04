@@ -22,6 +22,7 @@ from .lineage import InvalidDataset, InvalidQuery, InvalidTransfer
 from .pseudonymizer import InvalidContext, InvalidFields, InvalidKey
 from .risk import InvalidK, InvalidQuasiIdentifiers
 from .service import Service
+from .subject import InvalidCorrection, InvalidRecord, InvalidSubjectRequest
 
 CLASSIFY_PATH = "/v1/classify"
 DEIDENTIFY_PATH = "/v1/deidentify"
@@ -39,6 +40,7 @@ ROTATE_PATH = "/v1/encryption/rotate"
 AGGREGATE_PATH = "/v1/query/aggregate"
 DIFFERENTIAL_AGGREGATE_PATH = "/v1/query/differential-aggregate"
 TRANSFER_EVALUATE_PATH = "/v1/compliance/transfer/evaluate"
+SUBJECT_REQUESTS_PATH = "/v1/subject-requests/process"
 KNOWN_POST_PATHS = (
     CLASSIFY_PATH,
     DEIDENTIFY_PATH,
@@ -56,6 +58,7 @@ KNOWN_POST_PATHS = (
     AGGREGATE_PATH,
     DIFFERENTIAL_AGGREGATE_PATH,
     TRANSFER_EVALUATE_PATH,
+    SUBJECT_REQUESTS_PATH,
 )
 
 
@@ -155,6 +158,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == TRANSFER_EVALUATE_PATH:
             self.handle_json_endpoint(self.service.evaluate_transfer)
+            return
+        if self.path == SUBJECT_REQUESTS_PATH:
+            self.handle_json_endpoint(self.service.process_subject_requests, wrap_results=False)
             return
         self.not_found()
 
@@ -274,6 +280,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         except InvalidComplianceTransfer as exc:
             self.send_error_json(422, "invalid_transfer", str(exc))
+            return
+        except InvalidRecord as exc:
+            self.send_error_json(422, "invalid_record", str(exc))
+            return
+        except InvalidSubjectRequest as exc:
+            self.send_error_json(422, "invalid_subject_request", str(exc))
+            return
+        except InvalidCorrection as exc:
+            self.send_error_json(422, "invalid_correction", str(exc))
             return
         self.send_json(200, {"results": output} if wrap_results else output)
 

@@ -201,6 +201,17 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构非法或 `rules`、`transfers` 缺失、为空、非数组时返回 422 `invalid_request`；规则缺字段、`rule_id` 重复、`priority` 或 `effect` 非法、集合为空或重复、类别非法、时间非法或结束时间不晚于开始时间时返回 422 `invalid_rule`；流转缺字段、`transfer_id` 重复、来源与目的相同、类别或时间非法时返回 422 `invalid_transfer`。任何校验失败都不返回部分结果，错误响应不回显输入；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
 
+### `POST /v1/subject-requests/process`
+
+无状态的数据主体请求处理，请求级、不保存内容、不修改输入，相同输入结果一致。请求体为 JSON 对象：
+
+- `records`：非空数组，每项为一个记录对象，字段为 `record_id`（请求内唯一的非空字符串）、`subject_id`（非空字符串）与对象 `data`。
+- `requests`：非空数组，每项为一个主体请求对象，字段为 `request_id`（请求内唯一的非空字符串）、`subject_id`（非空字符串）、`type`（`export`、`correct` 或 `delete`）与布尔值 `verified`；仅 `correct` 必须携带非空 `changes` 数组，`export` 与 `delete` 不得携带 `changes`。`changes` 每项含 `record_id`、非根 RFC 6901 `path` 与任意 JSON `value`。
+
+请求按输入顺序作用于记录副本。`verified` 为 `false` 时结果为 `{"status": "rejected", "reason": "identity_not_verified"}`，主体记录不变。已验证的 `export` 返回该主体按 `record_id` 排序的 `record_id` 与 `data`，无匹配时为空数组；`delete` 删除该主体全部记录，返回 `deleted_count` 与排序的 `record_ids`，重复删除返回零项；`correct` 的目标记录须当时存在并属于该主体，`path` 须指向 `data` 已有成员或数组元素，同一记录的路径不得重复或互为祖先，更正原子生效，变更位置按 `record_id`、`path` 排序返回。响应为 `{"results": [...], "records": [...]}`，`results` 与请求同序，`records` 为最终记录并保持原顺序。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构或两个数组非法返回 422 `invalid_request`；记录字段非法或 `record_id` 重复返回 422 `invalid_record`；请求字段、类型、`verified`、`request_id` 唯一性非法，`export` 或 `delete` 携带 `changes`，或 `correct` 缺少 `changes` 返回 422 `invalid_subject_request`；更正项、指针、路径重叠、动态目标、主体归属或既有路径非法返回 422 `invalid_correction`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
 ## 验证
 
 ```bash
