@@ -21,6 +21,7 @@ from .encryption import decrypt_request, encrypt_request, rotate_request
 from .lineage import trace_lineage_request
 from .pseudonymizer import pseudonymize_request
 from .risk import reidentification_risk_request
+from .subject_requests import process_subject_requests
 
 
 class Service:
@@ -95,3 +96,7 @@ class Service:
     def evaluate_transfer(self, payload: Any) -> list[dict]:
         """Evaluate transfers against rules in a /v1/compliance/transfer/evaluate payload."""
         return transfer_evaluate_request(payload)
+
+    def process_subject_requests(self, payload: Any) -> dict:
+        """Process export/correct/delete requests for a /v1/subject-requests/process payload."""
+        return process_subject_requests(payload)

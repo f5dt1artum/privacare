@@ -201,10 +201,27 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构非法或 `rules`、`transfers` 缺失、为空、非数组时返回 422 `invalid_request`；规则缺字段、`rule_id` 重复、`priority` 或 `effect` 非法、集合为空或重复、类别非法、时间非法或结束时间不晚于开始时间时返回 422 `invalid_rule`；流转缺字段、`transfer_id` 重复、来源与目的相同、类别或时间非法时返回 422 `invalid_transfer`。任何校验失败都不返回部分结果，错误响应不回显输入；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
 
+### `POST /v1/subject-requests/process`
+
+无状态的数据主体请求处理（导出、更正、删除），仅处理当前请求：记录与请求仅取自当前请求，不保存内容、不修改输入，相同输入结果一致。请求体为 JSON 对象：
+
+- `records`：非空数组，每项含请求内唯一的非空 `record_id`、非空 `subject_id` 与对象 `data`。
+- `requests`：非空数组，按输入顺序作用于记录的私有副本。每项含请求内唯一的非空 `request_id`、非空 `subject_id`、`type`（仅 `export`、`correct`、`delete`）与布尔 `verified`。
+
+`verified` 为 `false` 时返回 `status` 为 `rejected`、`reason` 为 `identity_not_verified`，主体记录不变。已验证请求按类型处理：
+
+- `export`：返回主体当时全部记录的 `record_id` 与 `data`，按 `record_id` 排序；无匹配时为空数组。
+- `delete`：删除主体当时的全部记录，返回 `deleted_count` 与排序后的 `record_id`；重复删除返回零项。
+- `correct`：携带非空 `changes`，每项含非空 `record_id`、非根 RFC 6901 `path`（支持 `~0`、`~1` 转义）与任意 JSON `value`。目标记录须在当时存在并属于该主体，路径须指向 `data` 已有的对象成员或数组元素（数组索引遵循 RFC 6901：`-` 与前导零非法）；同一记录的路径不得重复或互为祖先，不同记录允许相同路径。更正先整体校验再原子生效；生效位置按 `record_id`、`path` 字典序返回。
+
+响应为 `{"results": [...], "records": [...]}`：`results` 与 `requests` 同序，导出快照反映该请求执行时刻的状态，不受后续更正影响；`records` 为全部请求作用后的最终记录，保持输入顺序（被删除的记录移除）。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构非法或 `records`、`requests` 缺失、为空、非数组返回 422 `invalid_request`；记录字段非法、`data` 非对象或 `record_id` 重复返回 422 `invalid_record`；请求字段、`type`、`verified`、`request_id` 唯一性非法，`export`/`delete` 携带 `changes`，或 `correct` 缺少 `changes` 返回 422 `invalid_subject_request`；更正数组或条目非法、指针语法非法、路径重叠、目标动态不存在、主体不匹配或路径不指向既有成员/元素返回 422 `invalid_correction`。任何校验失败都不返回部分结果；该路径仅接受 POST，非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
 ## 验证
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-当前基线已包含审计证据链的建链与验真、请求级数据血缘追踪、字段级认证加密的加密、解密与轮换、带小群体保护的聚合查询，以及面向公开分区的差分隐私聚合发布能力；后续题目应从已冻结事实出发独立设计并验证其余能力。
+当前基线已包含审计证据链的建链与验真、请求级数据血缘追踪、字段级认证加密的加密、解密与轮换、带小群体保护的聚合查询、面向公开分区的差分隐私聚合发布，以及无状态的数据主体请求导出、更正与删除处理能力；后续题目应从已冻结事实出发独立设计并验证其余能力。
