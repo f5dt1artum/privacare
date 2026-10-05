@@ -28,6 +28,7 @@ from .pseudonymizer import InvalidContext, InvalidFields, InvalidKey
 from .risk import InvalidK, InvalidQuasiIdentifiers
 from .service import Service
 from .subject import InvalidCorrection, InvalidRecord, InvalidSubjectRequest
+from .synthetic import InvalidRealRecords, InvalidSyntheticRecords
 
 CLASSIFY_PATH = "/v1/classify"
 DEIDENTIFY_PATH = "/v1/deidentify"
@@ -47,6 +48,7 @@ DIFFERENTIAL_AGGREGATE_PATH = "/v1/query/differential-aggregate"
 TRANSFER_EVALUATE_PATH = "/v1/compliance/transfer/evaluate"
 SUBJECT_REQUESTS_PATH = "/v1/subject-requests/process"
 FEDERATED_AGGREGATE_PATH = "/v1/federated/aggregate"
+SYNTHETIC_EVALUATE_PATH = "/v1/synthetic/evaluate"
 KNOWN_POST_PATHS = (
     CLASSIFY_PATH,
     DEIDENTIFY_PATH,
@@ -66,6 +68,7 @@ KNOWN_POST_PATHS = (
     TRANSFER_EVALUATE_PATH,
     SUBJECT_REQUESTS_PATH,
     FEDERATED_AGGREGATE_PATH,
+    SYNTHETIC_EVALUATE_PATH,
 )
 
 
@@ -171,6 +174,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == FEDERATED_AGGREGATE_PATH:
             self.handle_json_endpoint(self.service.federated_aggregate, wrap_results=False)
+            return
+        if self.path == SYNTHETIC_EVALUATE_PATH:
+            self.handle_json_endpoint(self.service.evaluate_synthetic, wrap_results=False)
             return
         self.not_found()
 
@@ -308,6 +314,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         except InsufficientParticipants as exc:
             self.send_error_json(422, "insufficient_participants", str(exc))
+            return
+        except InvalidRealRecords as exc:
+            self.send_error_json(422, "invalid_real_records", str(exc))
+            return
+        except InvalidSyntheticRecords as exc:
+            self.send_error_json(422, "invalid_synthetic_records", str(exc))
             return
         self.send_json(200, {"results": output} if wrap_results else output)
 
