@@ -18,6 +18,11 @@ from .consent import InvalidAccess, InvalidConsent, InvalidConsentEvent, Invalid
 from .deidentifier import InvalidPolicy
 from .differential import InvalidNoiseConfig, InvalidPartition, InvalidPrivacyBudget
 from .encryption import InvalidCiphertext, InvalidEnvelope
+from .federated import (
+    InsufficientParticipants,
+    InvalidFederatedConfig,
+    InvalidUpdate,
+)
 from .lineage import InvalidDataset, InvalidQuery, InvalidTransfer
 from .pseudonymizer import InvalidContext, InvalidFields, InvalidKey
 from .risk import InvalidK, InvalidQuasiIdentifiers
@@ -41,6 +46,7 @@ AGGREGATE_PATH = "/v1/query/aggregate"
 DIFFERENTIAL_AGGREGATE_PATH = "/v1/query/differential-aggregate"
 TRANSFER_EVALUATE_PATH = "/v1/compliance/transfer/evaluate"
 SUBJECT_REQUESTS_PATH = "/v1/subject-requests/process"
+FEDERATED_AGGREGATE_PATH = "/v1/federated/aggregate"
 KNOWN_POST_PATHS = (
     CLASSIFY_PATH,
     DEIDENTIFY_PATH,
@@ -59,6 +65,7 @@ KNOWN_POST_PATHS = (
     DIFFERENTIAL_AGGREGATE_PATH,
     TRANSFER_EVALUATE_PATH,
     SUBJECT_REQUESTS_PATH,
+    FEDERATED_AGGREGATE_PATH,
 )
 
 
@@ -161,6 +168,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == SUBJECT_REQUESTS_PATH:
             self.handle_json_endpoint(self.service.process_subject_requests, wrap_results=False)
+            return
+        if self.path == FEDERATED_AGGREGATE_PATH:
+            self.handle_json_endpoint(self.service.federated_aggregate, wrap_results=False)
             return
         self.not_found()
 
@@ -289,6 +299,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         except InvalidCorrection as exc:
             self.send_error_json(422, "invalid_correction", str(exc))
+            return
+        except InvalidFederatedConfig as exc:
+            self.send_error_json(422, "invalid_federated_config", str(exc))
+            return
+        except InvalidUpdate as exc:
+            self.send_error_json(422, "invalid_update", str(exc))
+            return
+        except InsufficientParticipants as exc:
+            self.send_error_json(422, "insufficient_participants", str(exc))
             return
         self.send_json(200, {"results": output} if wrap_results else output)
 

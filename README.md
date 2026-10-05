@@ -212,10 +212,23 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构或两个数组非法返回 422 `invalid_request`；记录字段非法或 `record_id` 重复返回 422 `invalid_record`；请求字段、类型、`verified`、`request_id` 唯一性非法，`export` 或 `delete` 携带 `changes`，或 `correct` 缺少 `changes` 返回 422 `invalid_subject_request`；更正项、指针、路径重叠、动态目标、主体归属或既有路径非法返回 422 `invalid_correction`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
 
+### `POST /v1/federated/aggregate`
+
+联邦学习更新聚合，请求级、无状态：更新仅取自当前请求，不保存内容、不修改输入，相同输入结果一致。请求体为 JSON 对象：
+
+- `round_id`：非空字符串。
+- `minimum_participants`：2 至 100 的 JSON 整数（布尔值不接受）。
+- `max_l2_norm`：正的有限 JSON 数字。
+- `updates`：非空数组，每项含请求内唯一的非空 `participant_id`、1 至 1000000 的 JSON 整数 `sample_count`（布尔值不接受），以及一维数组 `values`；向量长度为 1 至 4096，所有更新维度相同，元素只能是有限 JSON 数字（布尔值不算数字，`NaN`/`Infinity` 不是合法 JSON 数字）。
+
+处理时先计算每个向量的 L2 范数：超过 `max_l2_norm` 的向量按 `max_l2_norm / 原范数` 的比例整体逐维裁剪，恰好等于上限的向量不裁剪，零向量保持不变且不进入裁剪名单；再按 `sample_count` 对裁剪后的向量逐维加权平均（权重之和为各更新样本数总和）。更新数少于 `minimum_participants` 时不得发布。成功响应仅含 `round_id`、`participant_count`、`total_sample_count`、`dimension`、`aggregate` 与 `clipped_participants`；聚合值按十进制四舍五入保留六位小数，负零规范为零，裁剪名单按 `participant_id` 字典序排列。改变更新顺序不改变聚合数值或裁剪名单；处理不修改输入、不保存数据，响应与错误均不回显单个更新的内容。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根对象或 `updates` 结构非法返回 422 `invalid_request`；`round_id`、`minimum_participants` 或 `max_l2_norm` 非法返回 422 `invalid_federated_config`；更新缺字段、不是对象、`participant_id` 为空或重复、`sample_count` 非法、`values` 不是一维向量、长度越界、维度不一致或含非有限数字（含布尔值）返回 422 `invalid_update`；有效更新数未达到 `minimum_participants` 返回 422 `insufficient_participants`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
 ## 验证
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-当前基线已包含审计证据链的建链与验真、请求级数据血缘追踪、字段级认证加密的加密、解密与轮换、带小群体保护的聚合查询，以及面向公开分区的差分隐私聚合发布能力；后续题目应从已冻结事实出发独立设计并验证其余能力。
+当前基线已包含审计证据链的建链与验真、请求级数据血缘追踪、字段级认证加密的加密、解密与轮换、带小群体保护的聚合查询、面向公开分区的差分隐私聚合发布，以及带逐更新 L2 裁剪与样本数加权平均的联邦学习更新聚合能力；后续题目应从已冻结事实出发独立设计并验证其余能力。
