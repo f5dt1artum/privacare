@@ -18,6 +18,7 @@ from .consent import consent_evaluate_request, consent_timeline_request
 from .deidentifier import deidentify_request
 from .differential import differential_aggregate_request
 from .encryption import decrypt_request, encrypt_request, rotate_request
+from .federated import federated_aggregate_request
 from .lineage import trace_lineage_request
 from .pseudonymizer import pseudonymize_request
 from .risk import reidentification_risk_request
@@ -100,3 +101,7 @@ class Service:
     def process_subject_requests(self, payload: Any) -> dict:
         """Apply export/correct/delete requests in a /v1/subject-requests/process payload."""
         return process_subject_requests(payload)
+
+    def federated_aggregate(self, payload: Any) -> dict:
+        """Clip and federated-average participant updates for /v1/federated/aggregate."""
+        return federated_aggregate_request(payload)

@@ -210,7 +210,20 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 请求按输入顺序作用于记录副本。`verified` 为 `false` 时结果为 `{"status": "rejected", "reason": "identity_not_verified"}`，主体记录不变。已验证的 `export` 返回该主体按 `record_id` 排序的 `record_id` 与 `data`，无匹配时为空数组；`delete` 删除该主体全部记录，返回 `deleted_count` 与排序的 `record_ids`，重复删除返回零项；`correct` 的目标记录须当时存在并属于该主体，`path` 须指向 `data` 已有成员或数组元素，同一记录的路径不得重复或互为祖先，更正原子生效，变更位置按 `record_id`、`path` 排序返回。响应为 `{"results": [...], "records": [...]}`，`results` 与请求同序，`records` 为最终记录并保持原顺序。
 
-错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构或两个数组非法返回 422 `invalid_request`；记录字段非法或 `record_id` 重复返回 422 `invalid_record`；请求字段、类型、`verified`、`request_id` 唯一性非法，`export` 或 `delete` 携带 `changes`，或 `correct` 缺少 `changes` 返回 422 `invalid_subject_request`；更正项、指针、路径重叠、动态目标、主体归属或既有路径非法返回 422 `invalid_correction`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构或两个数组非法返回 422 `invalid_request`；记录字段非法或 `record_id` 重复返回 422 `invalid_record`；请求字段、类型、`verified`、`request_id` 唯一性非法，`export` 或 `delete` 携带 `changes`，或 `correct` 缺少 `changes` 返回 422 `invalid_subject_request`；更正项、指针、路径重叠、动态目标、主体归属或既有路径非法返回 422 `invalid_correction`。任何校验都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
+### `POST /v1/federated/aggregate`
+
+请求级联邦学习更新聚合，无状态：更新仅取自当前请求，不保存内容、不修改输入，相同输入结果一致。请求体为 JSON 对象：
+
+- `round_id`：非空轮次标识字符串。
+- `minimum_participants`：2 至 100 的 JSON 整数（布尔值不接受），发布聚合所需的最少更新数。
+- `max_l2_norm`：正的有限数值（布尔值不接受），单条更新向量的 L2 范数上限。
+- `updates`：非空数组，每项为一个参与方更新对象，含请求内唯一的非空 `participant_id`、1 至 1000000 的 JSON 整数 `sample_count`（布尔值不接受）与一维数组 `values`；向量长度为 1 至 4096，所有更新维度相同，元素只能是有限 JSON 数字（布尔值不算数字，`NaN`/`Infinity` 不是合法 JSON 数字）。
+
+处理时先计算每个向量的 L2 范数：超过 `max_l2_norm` 的向量按 `max_l2_norm / 原范数` 的比例整体裁剪，恰好等于上限的不裁剪，零向量保持不变。再按 `sample_count` 对裁剪后的向量逐维加权平均。更新数少于 `minimum_participants` 时不得发布。成功响应仅含 `round_id`、`participant_count`、`total_sample_count`、`dimension`、`aggregate` 与 `clipped_participants`；聚合值按十进制四舍五入保留六位小数，负零规范为零，裁剪名单按 `participant_id` 字典序排列。改变更新顺序不改变聚合数值或裁剪名单；响应与错误均不回显单个更新内容。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根对象或 `updates` 结构非法返回 422 `invalid_request`；`round_id`、`minimum_participants` 或 `max_l2_norm` 非法返回 422 `invalid_federated_config`；更新缺字段、更新项不是对象、`participant_id` 为空或重复、`sample_count` 非法、`values` 长度或维度非法、含非有限数字返回 422 `invalid_update`；未达到参与门槛返回 422 `insufficient_participants`。任何失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
 
 ## 验证
 
@@ -218,4 +231,4 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-当前基线已包含审计证据链的建链与验真、请求级数据血缘追踪、字段级认证加密的加密、解密与轮换、带小群体保护的聚合查询，以及面向公开分区的差分隐私聚合发布能力；后续题目应从已冻结事实出发独立设计并验证其余能力。
+当前基线已包含审计证据链的建链与验真、请求级数据血缘追踪、字段级认证加密的加密、解密与轮换、带小群体保护的聚合查询、面向公开分区的差分隐私聚合发布，以及带 L2 裁剪与样本数加权平均的联邦学习更新聚合能力；后续题目应从已冻结事实出发独立设计并验证其余能力。
