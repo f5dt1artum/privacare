@@ -23,6 +23,7 @@ from .lineage import trace_lineage_request
 from .pseudonymizer import pseudonymize_request
 from .risk import reidentification_risk_request
 from .subject import process_subject_requests
+from .synthetic import synthetic_evaluate_request
 
 
 class Service:
@@ -105,3 +106,7 @@ class Service:
     def federated_aggregate(self, payload: Any) -> dict:
         """Clip and average federated updates in a /v1/federated/aggregate payload."""
         return federated_aggregate_request(payload)
+
+    def evaluate_synthetic(self, payload: Any) -> dict:
+        """Compare real and synthetic records in a /v1/synthetic/evaluate payload."""
+        return synthetic_evaluate_request(payload)

@@ -225,6 +225,18 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；根对象或 `updates` 结构非法返回 422 `invalid_request`；`round_id`、`minimum_participants` 或 `max_l2_norm` 非法返回 422 `invalid_federated_config`；更新缺字段、不是对象、`participant_id` 为空或重复、`sample_count` 非法、`values` 不是一维向量、长度越界、维度不一致或含非有限数字（含布尔值）返回 422 `invalid_update`；有效更新数未达到 `minimum_participants` 返回 422 `insufficient_participants`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
 
+### `POST /v1/synthetic/evaluate`
+
+合成健康数据效用评估，请求级、无状态：真实与合成记录仅取自当前请求，不保存内容、不修改输入，相同输入结果一致。请求体为 JSON 对象：
+
+- `real_records`：非空数组，每项为一个记录对象。
+- `synthetic_records`：非空数组，每项为一个记录对象。
+- `fields`：非空数组，每项含请求内唯一的非根 RFC 6901 `path` 与 `kind`（仅 `categorical` 或 `numeric`）。每个路径必须在两组的所有记录中解析到叶子（不得缺失、越界或指向对象/数组）。`categorical` 叶子只能是字符串、布尔值或 `null`；`numeric` 叶子只能是有限 JSON 数字（布尔值不算数字，`NaN`/`Infinity` 不是合法 JSON 数字）。
+
+响应仅含 `real_count`、`synthetic_count`、`fields`、`overall_utility`、`exact_match_count` 与 `exact_match_rate`。`fields` 按 `path` 字典序排列，每项含 `path`、`kind`、`distance` 与 `utility`：`categorical` 在取值并集上比较两经验分布的总变差距离（各取值概率差绝对值之和的一半），`numeric` 比较两经验累积分布的 Kolmogorov-Smirnov 最大距离；字段效用为 `1 - distance`，`overall_utility` 为各字段效用（未舍入值）的算术平均。`exact_match_count` 统计其全部声明路径取值的有序元组与任一真实记录相等的合成记录数（每条合成记录最多计一次，重复真实记录不重复计数），`exact_match_rate` 以合成记录数为分母。比较保留 JSON 类型边界：数字按数值相等（`1 = 1.0`），布尔值不与数字相等（`true ≠ 1`），`null`、`false` 互不相等，字符串区分大小写。所有距离、比例与效用按十进制四舍五入保留六位小数。响应不回显输入值、记录或匹配对象。
+
+错误语义：HTTP 层与 `POST /v1/classify` 一致；根结构非法，或 `real_records`、`synthetic_records`、`fields` 缺失、类型错误或为空返回 422 `invalid_request`；字段缺少 `path` 或 `kind`、`path` 非法或为根、`path` 重复、`kind` 非法返回 422 `invalid_schema`；真实记录不是对象、路径无法解析、目标为容器或类型不符返回 422 `invalid_real_records`；合成记录同类问题返回 422 `invalid_synthetic_records`。任何校验失败都不返回部分指标或输入；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
+
 ## 库接口
 
 ### `privacare.ConsentRegistry`
