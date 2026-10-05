@@ -225,10 +225,41 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；根对象或 `updates` 结构非法返回 422 `invalid_request`；`round_id`、`minimum_participants` 或 `max_l2_norm` 非法返回 422 `invalid_federated_config`；更新缺字段、不是对象、`participant_id` 为空或重复、`sample_count` 非法、`values` 不是一维向量、长度越界、维度不一致或含非有限数字（含布尔值）返回 422 `invalid_update`；有效更新数未达到 `minimum_participants` 返回 422 `insufficient_participants`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
 
+## 包级 API
+
+### `privacare.ConsentRegistry`
+
+进程内的同意登记与用途约束注册表，与上述请求级 HTTP 接口相互独立：只有显式实例化并使用 `ConsentRegistry` 的流程受这些规则约束，现有调用方无需任何变更。
+
+```python
+from privacare import ConsentRegistry
+
+registry = ConsentRegistry()
+registry.register(
+    consent_id="c-1",
+    subject_id="subj-1",
+    purposes=["treatment"],
+    data_categories=["clinical"],
+    valid_from="2026-01-01T00:00:00Z",
+    valid_until="2027-01-01T00:00:00Z",  # 可选,省略表示不失效
+)
+result = registry.evaluate(
+    subject_id="subj-1",
+    purpose="treatment",
+    data_categories=["clinical"],
+    evaluated_at="2026-06-01T00:00:00Z",
+)
+```
+
+- **登记与版本**：`register`（可缺省 `valid_until`）登记同意；相同 `consent_id` 且内容相同的重复登记幂等，内容变化时产生递增版本并保留历史。`update` 语义相同但要求 `consent_id` 已存在。`revoke(consent_id, revoked_at)` 产生一个 `revoked` 新版本（撤销从 `revoked_at` 起生效，且不得早于生效时间），不改写历史；已撤销的同意重新登记会产生恢复为 `active` 的新版本。`query`/`get` 返回最新版本，`history` 按版本升序返回全部历史，返回值均与内部状态隔离。时间按带时区的 ISO 8601 语义比较（接受字符串或 `datetime`，必须带时区），集合采用精确字符串匹配。
+- **评估**：`evaluate` 返回 `{"decision", "reason", "consent_id", "version"}`。只有同一条最新版本记录覆盖全部所需类别与指定用途，且评估时已经生效（等于生效时间视为有效）、尚未失效（等于失效时间视为已失效）、未撤销时才为 `ALLOW`（原因码 `ALLOWED`）；否则为 `DENY`，命中字段为 `None`，原因码按优先级唯一确定：无该主体记录 `NO_CONSENT`、均未生效 `NOT_YET_EFFECTIVE`，其余依次 `REVOKED`、`EXPIRED`、`PURPOSE_NOT_ALLOWED`、`DATA_CATEGORY_NOT_ALLOWED`。
+- **快照**：`export_snapshot()` 导出确定性 JSON（相同状态字节一致），`import_snapshot(data)` / `ConsentRegistry.from_snapshot(data)` 完整恢复记录、版本与撤销时间；导入要么整体成功要么保持原状，绝不留下部分数据。
+- **错误**：缺少必填字段、类别或用途集合为空、时间无时区、失效时间不晚于生效时间、撤销时间早于生效时间抛出 `InvalidConsentError`；查询、更新或撤销不存在的 `consent_id` 抛出 `ConsentNotFoundError`；快照格式、版本或记录关系非法抛出 `InvalidConsentSnapshotError`。三者均可从 `privacare` 包入口导入。
+
 ## 验证
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-当前基线已包含审计证据链的建链与验真、请求级数据血缘追踪、字段级认证加密的加密、解密与轮换、带小群体保护的聚合查询、面向公开分区的差分隐私聚合发布，以及带逐更新 L2 裁剪与样本数加权平均的联邦学习更新聚合能力；后续题目应从已冻结事实出发独立设计并验证其余能力。
+当前基线已包含审计证据链的建链与验真、请求级数据血缘追踪、字段级认证加密的加密、解密与轮换、带小群体保护的聚合查询、面向公开分区的差分隐私聚合发布、带逐更新 L2 裁剪与样本数加权平均的联邦学习更新聚合，以及进程内 `ConsentRegistry` 同意登记与用途约束评估能力；后续题目应从已冻结事实出发独立设计并验证其余能力。
