@@ -225,6 +225,20 @@ PYTHONPATH=src python3 -m privacare.server --host 127.0.0.1 --port 8080
 
 错误语义：HTTP 层与 `POST /v1/classify` 一致；根对象或 `updates` 结构非法返回 422 `invalid_request`；`round_id`、`minimum_participants` 或 `max_l2_norm` 非法返回 422 `invalid_federated_config`；更新缺字段、不是对象、`participant_id` 为空或重复、`sample_count` 非法、`values` 不是一维向量、长度越界、维度不一致或含非有限数字（含布尔值）返回 422 `invalid_update`；有效更新数未达到 `minimum_participants` 返回 422 `insufficient_participants`。任何校验失败都不返回部分结果；该路径的非 POST 方法返回 405 `method_not_allowed`，未知路径返回 404 `not_found`。
 
+## 库接口
+
+### `privacare.ConsentRegistry`
+
+进程内同意登记与用途约束评估，从公开包入口导出（`from privacare import ConsentRegistry`）。仅显式使用该类的流程受以下规则约束，既有 HTTP 接口与请求级函数语义不变。
+
+- `register(consent_id, subject_id, data_categories, purposes, effective_from, expires_at=None)`：登记同意。`data_categories` 与 `purposes` 为非空字符串集合（精确匹配），时间为带时区的 ISO 8601 字符串或感知时区的 `datetime`，`expires_at` 可省略且必须晚于 `effective_from`。相同 `consent_id` 与内容的重复登记幂等；内容变化产生递增版本并保留历史。`update(...)` 同义但要求目标已存在。
+- `revoke(consent_id, revoked_at)`：撤销产生 `status` 为 `revoked` 的新版本，不改写历史；`revoked_at` 不得早于 `effective_from`，撤销自该时间起生效，相同时间重复撤销幂等。
+- `get(consent_id)` / `history(consent_id)`：查询最新版本或按版本升序的完整历史；历史为不可变记录元组，调用方不可修改。
+- `evaluate(subject_id, purpose, data_categories, evaluated_at)`：返回 `ConsentDecision`（`decision` 为 `ALLOW`/`DENY`、`reason`、`consent_id`、`version`；未允许时命中字段为 `None`）。只有该主体某条最新版本记录同时覆盖全部所需类别与指定用途，且评估时已生效（等于生效时间即生效）、未失效（等于失效时间即失效）、未撤销，结果才是 `ALLOW`。拒绝原因唯一：无记录为 `NO_CONSENT`，记录均未生效为 `NOT_YET_EFFECTIVE`，其余按 `REVOKED`、`EXPIRED`、`PURPOSE_NOT_ALLOWED`、`DATA_CATEGORY_NOT_ALLOWED` 优先级确定。
+- `export_snapshot()` / `import_snapshot(snapshot)` / `load_snapshot(snapshot)`：导出确定性 JSON 快照（相同状态字节一致）并完整恢复记录、版本与撤销时间；导入失败不留下部分数据。
+
+错误语义：缺少必填字段、类别或用途集合为空、时间无时区、失效时间不晚于生效时间、撤销时间早于生效时间，抛出 `InvalidConsentError`；查询、更新或撤销不存在的 `consent_id` 抛出 `ConsentNotFoundError`；快照格式、版本或记录关系非法抛出 `InvalidConsentSnapshotError`。
+
 ## 验证
 
 ```bash
